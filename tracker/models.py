@@ -8,6 +8,26 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 JSONVariant = sa.JSON().with_variant(JSONB(), "postgresql")
 
 
+class TZDateTime(sa.TypeDecorator):
+    """timestamptz semantics on every backend: aware in, aware out.
+
+    SQLite drops tzinfo on round-trip; without this, loaded rows compare
+    as naive against aware values and raise TypeError.
+    """
+    impl = sa.DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            raise ValueError("naive datetime written to database")
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -23,9 +43,9 @@ class Email(Base):
     from_addr: Mapped[str] = mapped_column(sa.String)
     subject: Mapped[str] = mapped_column(sa.String, default="")
     body_text: Mapped[str] = mapped_column(sa.Text, default="")
-    received_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(TZDateTime)
     raw: Mapped[dict] = mapped_column(JSONVariant, default=dict)
-    ingested_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    ingested_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
 
 
 class Classification(Base):
@@ -37,7 +57,7 @@ class Classification(Base):
     category: Mapped[str] = mapped_column(sa.String)
     confidence: Mapped[float] = mapped_column(sa.Float)
     extracted: Mapped[dict] = mapped_column(JSONVariant, default=dict)
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
 
 
 class Application(Base):
@@ -47,8 +67,8 @@ class Application(Base):
     company_display: Mapped[str] = mapped_column(sa.String)
     role_title: Mapped[str] = mapped_column(sa.String, default="")
     source: Mapped[str] = mapped_column(sa.String)  # applied | lead
-    first_seen_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
-    last_contact_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
+    last_contact_at: Mapped[datetime] = mapped_column(TZDateTime)
     status_derived: Mapped[str] = mapped_column(sa.String, default="applied")
     human_engaged: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     notion_page_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
@@ -60,7 +80,7 @@ class Event(Base):
     application_id: Mapped[int] = mapped_column(sa.ForeignKey("applications.id"), index=True)
     email_id: Mapped[str | None] = mapped_column(sa.ForeignKey("emails.gmail_id"), nullable=True)
     kind: Mapped[str] = mapped_column(sa.String)
-    occurred_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    occurred_at: Mapped[datetime] = mapped_column(TZDateTime)
 
 
 class Obligation(Base):
@@ -69,13 +89,13 @@ class Obligation(Base):
     application_id: Mapped[int] = mapped_column(sa.ForeignKey("applications.id"), index=True)
     type: Mapped[str] = mapped_column(sa.String)
     title: Mapped[str] = mapped_column(sa.String)
-    due_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    due_at: Mapped[datetime] = mapped_column(TZDateTime)
     due_confidence: Mapped[str] = mapped_column(sa.String)  # stated | assumed
     status: Mapped[str] = mapped_column(sa.String, default="open")
     effort_minutes: Mapped[int] = mapped_column(sa.Integer)
-    next_alert_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True, index=True)
+    next_alert_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True, index=True)
     alert_tier: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    closed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     closed_by: Mapped[str | None] = mapped_column(sa.String, nullable=True)
 
 
@@ -85,7 +105,7 @@ class Alert(Base):
     obligation_id: Mapped[int] = mapped_column(sa.ForeignKey("obligations.id"), index=True)
     channel: Mapped[str] = mapped_column(sa.String)
     tier: Mapped[str] = mapped_column(sa.String)
-    sent_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    sent_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     slack_ts: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     model_confidence: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     marked_junk: Mapped[bool] = mapped_column(sa.Boolean, default=False)
@@ -95,8 +115,8 @@ class EvalLabel(Base):
     __tablename__ = "eval_labels"
     email_id: Mapped[str] = mapped_column(sa.ForeignKey("emails.gmail_id"), primary_key=True)
     true_category: Mapped[str] = mapped_column(sa.String)
-    true_deadline: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
-    labeled_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    true_deadline: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    labeled_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
 
 
 class SyncState(Base):
@@ -113,7 +133,7 @@ class FailedJob(Base):
     error: Mapped[str] = mapped_column(sa.Text)
     strikes: Mapped[int] = mapped_column(sa.Integer, default=1)
     parked: Mapped[bool] = mapped_column(sa.Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow, onupdate=utcnow)
 
 
 def insert_email_idempotent(session, **cols) -> bool:
