@@ -1,0 +1,26 @@
+tracker/cli.py
+  s_0f86d25a77c49c::t_91aed5791e8b23 1-72
+tracker/models.py
+  s_0f86d25a77c49c::t_9757ae8067f8ca 151-160
+tests/test_pipeline.py
+  s_0f86d25a77c49c::t_f102324415c60a 1-101
+tracker/ingest/pipeline.py
+  s_0f86d25a77c49c::t_9e0abf3b4e0b9b 27-28
+  s_0f86d25a77c49c::t_5ba8d2d6114ef6 1-26,29-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "32bda3b6e651e97fde7c625075bce448d90a16d6",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
