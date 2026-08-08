@@ -148,6 +148,16 @@ def insert_email_idempotent(session, **cols) -> bool:
         return False
 
 
+def wipe_all_data(session) -> None:
+    """Delete every row in every table (validation runs only — data never persists).
+
+    Reversed sorted_tables order respects FK dependencies (children first).
+    """
+    for table in reversed(Base.metadata.sorted_tables):
+        session.execute(table.delete())
+    session.flush()
+
+
 def get_state(session, key: str) -> str | None:
     row = session.get(SyncState, key)
     return row.value if row else None
