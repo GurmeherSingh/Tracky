@@ -70,3 +70,16 @@ def test_two_failures_raise_classification_failed():
     client = FakeClient([RuntimeError("boom"), RuntimeError("boom")])
     with pytest.raises(ClassificationFailed):
         classify_email(EMAIL, GATE, client)
+
+
+def test_naive_deadline_is_coerced_to_utc():
+    cls = EmailClassification(
+        is_my_application=True, category="assessment", company="Stripe",
+        role_title="SWE", deadline_utc=datetime(2026, 8, 13, 23, 59),
+        deadline_basis="stated", actionable=True, confidence=0.9, reasoning="r")
+    assert cls.deadline_utc.tzinfo is not None
+
+
+def test_out_of_range_confidence_is_clamped():
+    assert make_cls(1.7).confidence == 1.0
+    assert make_cls(-0.2).confidence == 0.0
