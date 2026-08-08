@@ -1,0 +1,10 @@
+.env
+token.json
+credentials.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+docs/superpowers/
+.planning/
