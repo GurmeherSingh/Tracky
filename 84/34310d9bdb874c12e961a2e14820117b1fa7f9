@@ -1,0 +1,21 @@
+tests/test_notion_sync.py
+  s_0f86d25a77c49c::t_fd8617b18d17ca 1-65
+tracker/sync/notion_sync.py
+  s_0f86d25a77c49c::t_6b2a510a0a8b87 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8434310d9bdb874c12e961a2e14820117b1fa7f9",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
