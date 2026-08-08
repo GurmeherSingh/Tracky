@@ -1,0 +1,21 @@
+tracker/models.py
+  s_0f86d25a77c49c::t_5d9438fb7e2a33 46,48,60,70-71,83,92,96,98,108,118-119,136
+  s_0f86d25a77c49c::t_c4950e8078f368 11-16,18-30
+  s_0f86d25a77c49c::t_16fcc20e9e4dfb 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "50edcaf3869003e699e3dbdb81270808e23d6bc1",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
