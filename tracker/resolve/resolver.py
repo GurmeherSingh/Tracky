@@ -2,7 +2,11 @@ from pydantic import BaseModel
 
 from tracker.classify.schemas import EmailClassification, EmailIn
 from tracker.models import Application
-from tracker.resolve.companies import canonicalize
+
+
+def _join_key(name: str) -> str:
+    """Case/whitespace variance is LLM output noise, not naming signal."""
+    return " ".join(name.lower().split())
 
 _BOT_LOCALPARTS = ("no-reply", "noreply", "do-not-reply", "donotreply",
                    "notifications", "notification", "mailer")
@@ -38,7 +42,7 @@ def resolve_application(session, cls: EmailClassification,
                         email: EmailIn) -> ResolveResult:
     if not cls.company:
         return ResolveResult(needs_review=True, review_reason="no_company")
-    canonical = canonicalize(cls.company)
+    canonical = _join_key(cls.company)
     candidates = session.query(Application).filter_by(
         company_canonical=canonical).all()
     role = (cls.role_title or "").strip()

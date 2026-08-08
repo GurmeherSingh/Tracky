@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 
 from tracker.classify.schemas import EmailClassification, EmailIn
 from tracker.models import Application
-from tracker.resolve.companies import canonicalize
 from tracker.resolve.resolver import resolve_application
 
 NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
@@ -20,10 +19,11 @@ def make_email(from_addr="no-reply@greenhouse.io"):
                    subject="s", body_text="b", received_at=NOW, headers={})
 
 
-def test_canonicalize_strips_suffix_and_aliases():
-    assert canonicalize("Meta Platforms, Inc.") == "meta"
-    assert canonicalize("Hudson River Trading LLC") == "hudson river trading"
-    assert canonicalize("Stripe") == "stripe"
+def test_case_variance_maps_to_same_application(session):
+    resolve_application(session, make_cls("Stripe"), make_email())
+    r2 = resolve_application(session, make_cls("stripe"), make_email())
+    assert r2.created is False
+    assert session.query(Application).count() == 1
 
 
 def test_creates_new_application(session):
