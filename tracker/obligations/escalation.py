@@ -25,15 +25,6 @@ def clamp_to_waking(dt: datetime, tz: str) -> datetime:
     return local.astimezone(dt.tzinfo)
 
 
-def tier_for(due_at: datetime, effort_minutes: int, at: datetime) -> str:
-    """Which escalation rung is truthful for an alert firing at moment `at`."""
-    if at >= tier_time("last_call", due_at, effort_minutes):
-        return "last_call"
-    if at >= tier_time("t12", due_at, effort_minutes):
-        return "t12"
-    return "t48"
-
-
 def remind_error(due_at: datetime, effort_minutes: int, chosen: datetime,
                  now: datetime) -> str | None:
     """A reminder must arrive while acting is still realistic: after now,
@@ -50,7 +41,8 @@ def remind_error(due_at: datetime, effort_minutes: int, chosen: datetime,
 def next_alert_after(current_tier: str | None, due_at: datetime,
                      effort_minutes: int, now: datetime,
                      tz: str) -> tuple[str, datetime] | None:
-    start = TIERS.index(current_tier) + 1 if current_tier else 0
+    # a fired user-set "reminder" isn't on the ladder — resume it from the top
+    start = TIERS.index(current_tier) + 1 if current_tier in TIERS else 0
     for tier in TIERS[start:]:
         if tier == "detection":
             continue  # detection fires at creation time, not by schedule

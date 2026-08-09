@@ -5,9 +5,10 @@ from pydantic import BaseModel
 
 from tracker.models import Application, Obligation
 
-TIER_EMOJI = {"detection": "🆕", "t48": "⏳", "t12": "🚨", "last_call": "🔥"}
+TIER_EMOJI = {"detection": "🆕", "t48": "⏳", "t12": "🚨", "last_call": "🔥",
+              "reminder": "⏰"}
 TIER_LABEL = {"detection": "New obligation", "t48": "T-48h", "t12": "T-12h",
-              "last_call": "LAST CALL"}
+              "last_call": "LAST CALL", "reminder": "Reminder (you asked)"}
 
 
 def gmail_link(gmail_id: str) -> str:

@@ -82,7 +82,9 @@ def run_forever(engine, settings) -> None:
 
     scheduler = BlockingScheduler(timezone="UTC")
     scheduler.add_job(guarded("ingest", ingest_job), "interval", minutes=5)
-    scheduler.add_job(guarded("sweep", sweep_job), "interval", minutes=5)
+    # 1-minute sweep: user-set reminders should land near their chosen minute;
+    # the next_alert_at query is indexed, so the extra ticks cost nothing
+    scheduler.add_job(guarded("sweep", sweep_job), "interval", minutes=1)
     scheduler.add_job(guarded("digest", digest_job), "interval", minutes=15)
     scheduler.add_job(guarded("notion", notion_job), "interval", minutes=15)
     log.info("scheduler_started")

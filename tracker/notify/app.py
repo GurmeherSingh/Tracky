@@ -12,7 +12,7 @@ from tracker.models import Alert, Obligation, utcnow
 from tracker.notify.review import (handle_review_assign, handle_review_ignore,
                                    handle_review_new, is_review_resolved,
                                    resolved_blocks)
-from tracker.obligations.escalation import remind_error, tier_for
+from tracker.obligations.escalation import remind_error
 from tracker.obligations.lifecycle import close_obligation
 
 
@@ -125,8 +125,8 @@ def build_app(settings, engine) -> App:
                     ack(response_action="errors", errors={"when": err})
                     return
                 ob.next_alert_at = chosen
-                # re-slot into the rung that will be truthful when it fires
-                ob.alert_tier = tier_for(ob.due_at, ob.effort_minutes, chosen)
+                # user-set → its own label; the ladder resumes after it fires
+                ob.alert_tier = "reminder"
                 ack()
                 local = chosen.astimezone(ZoneInfo(settings.timezone))
                 note = f"⏰ reminder set for {local.strftime('%a %I:%M %p').lstrip('0')}"

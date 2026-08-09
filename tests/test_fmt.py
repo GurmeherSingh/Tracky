@@ -40,3 +40,8 @@ def test_overdue_shows_overdue_not_negative_countdown():
 
 def test_auth_alarm_is_loud():
     assert "Gmail auth expired" in render_auth_alarm()
+
+
+def test_user_reminder_has_its_own_label():
+    text = render_alert(make_ob(), "HRT", "reminder", NOW, TZ)
+    assert "⏰" in text and "Reminder (you asked)" in text

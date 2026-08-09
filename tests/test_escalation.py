@@ -38,12 +38,12 @@ def test_next_alert_exhausted_returns_none():
     assert next_alert_after("last_call", DUE, 120, now, TZ) is None
 
 
-def test_tier_for_reslots_by_time_remaining():
-    from tracker.obligations.escalation import tier_for
+def test_ladder_resumes_after_user_reminder():
+    # a fired "reminder" is off-ladder; the next natural rung takes over
     due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
-    assert tier_for(due, 120, due - timedelta(hours=50)) == "t48"
-    assert tier_for(due, 120, due - timedelta(hours=10)) == "t12"
-    assert tier_for(due, 120, due - timedelta(hours=2)) == "last_call"
+    now = due - timedelta(hours=20)          # t48 already past, t12 ahead
+    tier, at = next_alert_after("reminder", due, 120, now, TZ)
+    assert tier == "t12" and at == due - timedelta(hours=12)
 
 
 def test_remind_accepts_time_before_last_call():
