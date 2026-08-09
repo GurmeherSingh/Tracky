@@ -177,6 +177,25 @@ def test_confirmed_interview_email_closes_scheduling_in_pipeline(session):
     assert obs[0].status == "completed" and obs[0].closed_by == "next_stage"
 
 
+def test_tracked_applications_reach_the_llm(session):
+    seen = []
+
+    def classify(user_content):
+        seen.append(user_content)
+        return GOOD
+
+    first = EmailIn(gmail_id="m1", thread_id="t1", from_addr="no-reply@hackerrank.com",
+                    subject="Stripe assessment", body_text="complete in 7 days",
+                    received_at=NOW, headers={})
+    second = EmailIn(gmail_id="m2", thread_id="t2", from_addr="no-reply@hackerrank.com",
+                     subject="Stripe assessment", body_text="complete in 7 days",
+                     received_at=NOW, headers={})
+    process_email(session, first, FakeAnthropic(classify), TZ)
+    process_email(session, second, FakeAnthropic(classify), TZ)
+    assert "tracked-applications: (none yet)" in seen[0]
+    assert "Stripe" in seen[1] and "id=" in seen[1]
+
+
 def test_wipe_all_data_empties_every_table(session):
     process_email(session, make_email(), FakeAnthropic(GOOD), TZ)
     record_failure(session, "m9", "classify", "boom")

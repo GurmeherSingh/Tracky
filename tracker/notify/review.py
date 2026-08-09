@@ -6,7 +6,7 @@ from tracker.obligations.lifecycle import apply_closures, create_obligation_if_n
 from tracker.resolve.resolver import _is_variant, _join_key
 from tracker.state.events import append_event
 
-EXCERPT_LINES = 10
+EXCERPT_CHARS = 160
 
 
 def _rehydrate(session, email_id: str) -> tuple[EmailIn, EmailClassification]:
@@ -32,11 +32,12 @@ def _park(session, email_id: str, note: str | None = None) -> None:
 def post_review_item(session, notifier: SlackNotifier, email_row: Email,
                      cls_row: Classification,
                      candidates: list[Application]) -> str:
-    excerpt = "\n".join(email_row.body_text.splitlines()[:EXCERPT_LINES])
+    first_line = next(
+        (ln.strip() for ln in email_row.body_text.splitlines() if ln.strip()), "")
     header = (f"🔎 *Review needed* — `{cls_row.category}` "
               f"(confidence {cls_row.confidence:.2f})\n"
               f"*From:* {email_row.from_addr}\n*Subject:* {email_row.subject}\n"
-              f"```{excerpt}```")
+              f"_{first_line[:EXCERPT_CHARS]}_")
     elements = [{"type": "button", "action_id": "review_new",
                  "text": {"type": "plain_text", "text": "New application"},
                  "value": email_row.gmail_id}]

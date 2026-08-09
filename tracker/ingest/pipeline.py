@@ -8,7 +8,7 @@ from tracker.classify.prompts import PROMPT_VERSION
 from tracker.classify.schemas import EmailIn
 from tracker.ingest.gmail_client import HistoryExpired
 from tracker.log import get_logger
-from tracker.models import (Classification, Email, FailedJob,
+from tracker.models import (Application, Classification, Email, FailedJob,
                             get_state, insert_email_idempotent, set_state)
 from tracker.obligations.lifecycle import apply_closures, create_obligation_if_needed
 from tracker.resolve.resolver import resolve_application
@@ -49,8 +49,11 @@ def process_email(session, email: EmailIn, anthropic_client, tz: str,
         log.info("gated_noise", reason=gate.reason)
         return "noise"
 
+    candidates = (session.query(Application)
+                  .order_by(Application.last_contact_at.desc())
+                  .limit(100).all())
     try:
-        cls, model = classify_email(email, gate, anthropic_client)
+        cls, model = classify_email(email, gate, anthropic_client, candidates)
     except ClassificationFailed as e:
         record_failure(session, email.gmail_id, "classify", str(e))
         log.warning("classification_failed", error=str(e))

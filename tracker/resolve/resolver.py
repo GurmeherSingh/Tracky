@@ -1,9 +1,10 @@
 import re
 
+import sqlalchemy as sa
 from pydantic import BaseModel
 
 from tracker.classify.schemas import EmailClassification, EmailIn
-from tracker.models import Application
+from tracker.models import Application, Email, Event
 
 _LEGAL_SUFFIXES = re.compile(r"\b(inc|llc|corp|corporation|ltd|plc|gmbh)\b\.?$")
 
@@ -32,13 +33,6 @@ def _looks_human(from_addr: str) -> bool:
     return not any(b in local for b in _BOT_LOCALPARTS)
 
 
-def _role_overlap(a: str, b: str) -> float:
-    ta, tb = set(a.lower().split()), set(b.lower().split())
-    if not ta or not tb:
-        return 0.0
-    return len(ta & tb) / min(len(ta), len(tb))
-
-
 class ResolveResult(BaseModel):
     application_id: int | None = None
     needs_review: bool = False
@@ -53,42 +47,60 @@ def _touch(app: Application, email: EmailIn) -> None:
         app.human_engaged = True
 
 
+def _thread_application_id(session, thread_id: str) -> int | None:
+    if not thread_id:
+        return None
+    row = (session.query(Event.application_id)
+           .join(Email, Email.gmail_id == Event.email_id)
+           .filter(Email.thread_id == thread_id)
+           .order_by(Event.occurred_at.desc())
+           .first())
+    return row[0] if row else None
+
+
 def resolve_application(session, cls: EmailClassification,
                         email: EmailIn) -> ResolveResult:
+    """Three-tier ladder: deterministic evidence, then LLM judgment, then human.
+
+    1. Thread inheritance — an email in an already-attached Gmail thread belongs
+       to that application, whatever the classifier says. Provable, so it wins.
+    2. The classifier's match verdict against the tracked-applications list it
+       was shown. An id it names must actually exist — a hallucinated id is
+       treated as unsure, never trusted.
+    3. Human review only for what the model itself calls unsure.
+    """
+    thread_app_id = _thread_application_id(session, email.thread_id)
+    if thread_app_id is not None:
+        app = session.get(Application, thread_app_id)
+        _touch(app, email)
+        return ResolveResult(application_id=app.id)
+
+    if cls.match_basis == "existing":
+        app = (session.get(Application, cls.matched_application_id)
+               if cls.matched_application_id is not None else None)
+        if app is None:
+            return ResolveResult(needs_review=True,
+                                 review_reason="llm_matched_unknown_id")
+        _touch(app, email)
+        return ResolveResult(application_id=app.id)
+
+    if cls.match_basis == "unsure":
+        return ResolveResult(needs_review=True, review_reason="llm_unsure_match")
+
     if not cls.company:
         return ResolveResult(needs_review=True, review_reason="no_company")
-    canonical = _join_key(cls.company)
-    candidates = session.query(Application).filter_by(
-        company_canonical=canonical).all()
-    role = (cls.role_title or "").strip()
 
-    if role:
-        for app in candidates:
-            if app.role_title.lower() == role.lower():
-                _touch(app, email)
-                return ResolveResult(application_id=app.id)
-    if candidates:
-        if not role:
-            if len(candidates) == 1:
-                app = candidates[0]
-                _touch(app, email)
-                return ResolveResult(application_id=app.id)
-            return ResolveResult(needs_review=True,
-                                 review_reason="ambiguous_company_match")
-        fuzzy = [c for c in candidates if _role_overlap(role, c.role_title) > 0.5]
-        if len(fuzzy) == 1:
-            _touch(fuzzy[0], email)
-            return ResolveResult(application_id=fuzzy[0].id)
-        if len(fuzzy) > 1:
-            return ResolveResult(needs_review=True,
-                                 review_reason="ambiguous_company_match")
-        # distinct role at a known company → new application (P13)
-    else:
-        variants = [a for a in session.query(Application).all()
-                    if _is_variant(canonical, a.company_canonical)]
-        if variants:
-            return ResolveResult(needs_review=True,
-                                 review_reason="possible_company_variant")
+    canonical = _join_key(cls.company)
+    role = (cls.role_title or "").strip()
+    # provable-duplicate guard: identical canonical name AND role means the
+    # model said "new" about an application we already track
+    dup = (session.query(Application)
+           .filter_by(company_canonical=canonical)
+           .filter(sa.func.lower(Application.role_title) == role.lower())
+           .first()) if role else None
+    if dup is not None:
+        _touch(dup, email)
+        return ResolveResult(application_id=dup.id)
 
     app = Application(
         company_canonical=canonical, company_display=cls.company,

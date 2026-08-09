@@ -1,4 +1,4 @@
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 SYSTEM_PROMPT = """You classify a single email from a job-seeker's inbox.
 
@@ -28,6 +28,16 @@ You return a structured verdict. Definitions:
   email's received-at timestamp given in the user message (basis="relative").
   If a date is ambiguous (no year, no timezone, conflicting dates), return
   deadline_utc=null and basis="none" — a wrong deadline is worse than none.
+- matched_application_id / match_basis: the user message includes
+  "tracked-applications" — the applications already in the user's ledger, each
+  with an id. If this email belongs to one of them, set match_basis="existing"
+  and matched_application_id to that id. Match on identity, not spelling:
+  "North", "North Cloud" and "North.Cloud" are the same company; a role title
+  may gain or drop suffixes ("... Intern" vs "... Intern, Miami"). The same
+  company with a genuinely DIFFERENT role is a separate application →
+  match_basis="new". If it belongs to no tracked application, match_basis="new"
+  and matched_application_id=null. If you truly cannot tell,
+  match_basis="unsure" — a human will decide; never guess an id.
 - confidence: your overall confidence in this verdict, 0.0-1.0. Be honest;
   low confidence routes to a stronger reviewer.
 - reasoning: ONE sentence.

@@ -24,6 +24,8 @@ class EmailClassification(BaseModel):
     deadline_basis: Literal["stated", "relative", "assumed", "none"]
     actionable: bool
     is_confirmation: bool = False
+    matched_application_id: int | None = None
+    match_basis: Literal["existing", "new", "unsure"] = "new"
     confidence: float
     reasoning: str
 
