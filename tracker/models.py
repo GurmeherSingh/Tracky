@@ -97,6 +97,9 @@ class Obligation(Base):
     alert_tier: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     closed_by: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    # the email whose deadline is currently operative — deep-link target
+    source_email_id: Mapped[str | None] = mapped_column(
+        sa.ForeignKey("emails.gmail_id"), nullable=True)
 
 
 class Alert(Base):

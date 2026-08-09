@@ -123,6 +123,20 @@ def test_reminder_with_stated_deadline_upgrades_assumed(session):
     assert ob.due_confidence == "stated" and ob.due_at == stated_due
 
 
+def test_obligation_links_to_operative_email(session):
+    app = make_app(session)
+    ob = create_obligation_if_needed(
+        session, app.id,
+        make_cls("assessment", deadline=NOW + timedelta(days=7), basis="relative"),
+        make_email("m1"), TZ)
+    assert ob.source_email_id == "m1"
+    create_obligation_if_needed(
+        session, app.id,
+        make_cls("assessment", deadline=NOW + timedelta(days=6), basis="stated"),
+        make_email("m2"), TZ)
+    assert ob.source_email_id == "m2"  # stated deadline email took over
+
+
 def test_stated_deadline_upgrades_relative(session):
     app = make_app(session)
     ob = create_obligation_if_needed(

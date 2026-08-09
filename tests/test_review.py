@@ -44,6 +44,7 @@ def test_post_review_item_has_buttons(session):
     action_ids = [el["action_id"] for b in blocks if b["type"] == "actions"
                   for el in b["elements"]]
     assert "review_new" in action_ids and "review_ignore" in action_ids
+    assert "https://mail.google.com/mail/#all/m1" in blocks[0]["text"]["text"]
 
 
 def test_candidate_buttons_have_unique_action_ids(session):

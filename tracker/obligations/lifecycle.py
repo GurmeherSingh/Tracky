@@ -47,11 +47,14 @@ def create_obligation_if_needed(session, application_id: int,
         if _DUE_RANK[due_confidence] > _DUE_RANK[existing.due_confidence]:
             existing.due_at = due_at
             existing.due_confidence = due_confidence
+            # the upgrading email now holds the operative deadline — link to it
+            existing.source_email_id = email.gmail_id
         return existing
     ob = Obligation(
         application_id=application_id, type=ob_type,
         title=f"{_TITLES[ob_type]} — {cls.company or 'unknown'}",
         due_at=due_at, due_confidence=due_confidence,
+        source_email_id=email.gmail_id,
         status="open" if cls.confidence >= UNCONFIRMED_THRESHOLD else "unconfirmed",
         effort_minutes=EFFORT_MINUTES[ob_type],
         next_alert_at=datetime.now(UTC), alert_tier="detection")
@@ -66,7 +69,7 @@ def _open_obligations(session, application_id: int) -> list[Obligation]:
         Obligation.status.in_(["open", "unconfirmed"])).all()
 
 
-def _close(ob: Obligation, status: str, closed_by: str, at: datetime) -> None:
+def close_obligation(ob: Obligation, status: str, closed_by: str, at: datetime) -> None:
     ob.status = status
     ob.closed_by = closed_by
     ob.closed_at = at
@@ -83,7 +86,7 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
     # happened, whatever the classifier thinks the email is
     if self_addr and email.from_addr.lower() == self_addr.lower():
         for ob in [o for o in open_obs if o.type == "scheduling_reply"]:
-            _close(ob, "completed", "self_reply", email.received_at)
+            close_obligation(ob, "completed", "self_reply", email.received_at)
             closed.append(ob)
             open_obs.remove(ob)
         if not open_obs:
@@ -91,7 +94,7 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
     body = (email.subject + " " + email.body_text).lower()
     if cls.category == "rejection":
         for ob in open_obs:
-            _close(ob, "moot", "rejection", email.received_at)
+            close_obligation(ob, "moot", "rejection", email.received_at)
             closed.append(ob)
         return closed
     if cls.category in {"interview_invite", "offer"}:
@@ -102,7 +105,7 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
             earlier = earlier | {"scheduling_reply"}
         for ob in open_obs:
             if ob.type in earlier:
-                _close(ob, "completed", "next_stage", email.received_at)
+                close_obligation(ob, "completed", "next_stage", email.received_at)
                 closed.append(ob)
         return closed
     # an email that is itself an actionable ask can't be a receipt for one —
@@ -112,7 +115,7 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
     if any(p in body for p in _COMPLETION_PHRASES):
         for ob in open_obs:
             if ob.type in {"assessment", "take_home"}:
-                _close(ob, "completed", "receipt", email.received_at)
+                close_obligation(ob, "completed", "receipt", email.received_at)
                 closed.append(ob)
     return closed
 

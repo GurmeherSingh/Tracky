@@ -10,6 +10,21 @@ TIER_LABEL = {"detection": "New obligation", "t48": "T-48h", "t12": "T-12h",
               "last_call": "LAST CALL"}
 
 
+def gmail_link(gmail_id: str) -> str:
+    # #all (not #inbox) so the link survives archiving
+    return f"https://mail.google.com/mail/#all/{gmail_id}"
+
+
+def notion_link(page_id: str) -> str:
+    return f"https://www.notion.so/{page_id.replace('-', '')}"
+
+
+def _company_cell(company: str, notion_page_id: str | None) -> str:
+    if notion_page_id:
+        return f"*<{notion_link(notion_page_id)}|{company}>*"
+    return f"*{company}*"
+
+
 def _fmt_local(dt: datetime, tz: str) -> str:
     local = dt.astimezone(ZoneInfo(tz))
     return (f"{local.strftime('%a %b')} {local.day}, "
@@ -37,21 +52,46 @@ def render_alert(ob: Obligation, company_display: str, tier: str,
     return " ".join(parts)
 
 
-def render_board(open_obs: list[tuple[Obligation, str]],
+def render_alert_blocks(ob: Obligation, company_display: str, tier: str,
+                        now: datetime, tz: str, alert_id: int) -> list:
+    """Section + one row of actions. The newest alert for an obligation is the
+    live handle — previous alerts get their buttons stripped when this posts."""
+    value = f"{alert_id}:{ob.id}"
+    elements = [
+        {"type": "button", "action_id": "alert_done",
+         "text": {"type": "plain_text", "text": "✔ Done"}, "value": value},
+        {"type": "button", "action_id": "alert_snooze",
+         "text": {"type": "plain_text", "text": "💤 Snooze 3h"}, "value": value},
+        {"type": "button", "action_id": "alert_junk",
+         "text": {"type": "plain_text", "text": "🗑 Junk"}, "value": value},
+    ]
+    if ob.source_email_id:
+        elements.append({"type": "button", "action_id": "alert_open",
+                         "text": {"type": "plain_text", "text": "✉ Open email"},
+                         "url": gmail_link(ob.source_email_id)})
+    return [{"type": "section",
+             "text": {"type": "mrkdwn",
+                      "text": render_alert(ob, company_display, tier, now, tz)}},
+            {"type": "actions", "elements": elements}]
+
+
+def render_board(open_obs: list[tuple[Obligation, str, str | None]],
                  quiet: list[Application], now: datetime, tz: str) -> str:
     lines = ["*📋 Obligation Board*", ""]
     if not open_obs:
         lines.append("✅ No open obligations. Nothing is owed.")
     else:
-        for ob, company in sorted(open_obs, key=lambda p: p[0].due_at):
+        for ob, company, page_id in sorted(open_obs, key=lambda p: p[0].due_at):
             flag = " ⚠️ possibly missed" if ob.status == "unconfirmed_possibly_missed" else ""
             assumed = " [assumed]" if ob.due_confidence == "assumed" else ""
-            lines.append(f"• {ob.title.split(' — ')[0]} — *{company}* — "
+            lines.append(f"• {ob.title.split(' — ')[0]} — "
+                         f"{_company_cell(company, page_id)} — "
                          f"due {_fmt_local(ob.due_at, tz)} "
                          f"({_countdown(ob.due_at, now)}){assumed}{flag}")
     if quiet:
         lines += ["", "*🔇 Gone quiet (>14d after human contact)*"]
-        lines += [f"• {a.company_display} — {a.role_title}" for a in quiet]
+        lines += [f"• {_company_cell(a.company_display, a.notion_page_id)} — "
+                  f"{a.role_title}" for a in quiet]
     lines += ["", f"_Updated {_fmt_local(now, tz)}_"]
     return "\n".join(lines)
 

@@ -36,3 +36,24 @@ def test_next_alert_skips_past_tiers():
 def test_next_alert_exhausted_returns_none():
     now = DUE + timedelta(hours=1)
     assert next_alert_after("last_call", DUE, 120, now, TZ) is None
+
+
+def test_tier_for_reslots_by_time_remaining():
+    from tracker.obligations.escalation import tier_for
+    due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
+    assert tier_for(due, 120, due - timedelta(hours=50)) == "t48"
+    assert tier_for(due, 120, due - timedelta(hours=10)) == "t12"
+    assert tier_for(due, 120, due - timedelta(hours=2)) == "last_call"
+
+
+def test_snooze_clamps_to_last_call():
+    from tracker.obligations.escalation import snooze_until
+    due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
+    now = due - timedelta(hours=4)          # last_call is due-3h → 1h away
+    assert snooze_until(due, 120, now) == due - timedelta(hours=3)
+
+
+def test_snooze_refuses_inside_last_call_window():
+    from tracker.obligations.escalation import snooze_until
+    due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
+    assert snooze_until(due, 120, due - timedelta(hours=2)) is None

@@ -25,6 +25,26 @@ def clamp_to_waking(dt: datetime, tz: str) -> datetime:
     return local.astimezone(dt.tzinfo)
 
 
+def tier_for(due_at: datetime, effort_minutes: int, at: datetime) -> str:
+    """Which escalation rung is truthful for an alert firing at moment `at`."""
+    if at >= tier_time("last_call", due_at, effort_minutes):
+        return "last_call"
+    if at >= tier_time("t12", due_at, effort_minutes):
+        return "t12"
+    return "t48"
+
+
+def snooze_until(due_at: datetime, effort_minutes: int, now: datetime,
+                 hours: int = 3) -> datetime | None:
+    """Snooze can never push past the last realistic start time
+    (due − effort − buffer); inside that window it refuses (None).
+    No waking-hours clamp — a user tapping snooze is plainly awake."""
+    last_call_at = tier_time("last_call", due_at, effort_minutes)
+    if now >= last_call_at:
+        return None
+    return min(now + timedelta(hours=hours), last_call_at)
+
+
 def next_alert_after(current_tier: str | None, due_at: datetime,
                      effort_minutes: int, now: datetime,
                      tz: str) -> tuple[str, datetime] | None:

@@ -1,6 +1,7 @@
 from tracker.classify.schemas import EmailClassification, EmailIn
 from tracker.models import (Application, Classification, Email, FailedJob,
                             get_state, set_state)
+from tracker.notify.fmt import gmail_link
 from tracker.notify.slack import SlackNotifier
 from tracker.obligations.lifecycle import apply_closures, create_obligation_if_needed
 from tracker.resolve.resolver import _is_variant, _join_key
@@ -26,9 +27,13 @@ def is_review_resolved(session, email_id: str) -> bool:
     return bool(job and job.parked)
 
 
-def resolved_blocks(blocks: list, note: str) -> list:
-    """Strip the buttons off a review message and stamp the decision on it."""
-    kept = [b for b in blocks if b.get("type") != "actions"]
+def resolved_blocks(blocks: list, note: str, keep_actions: bool = False) -> list:
+    """Stamp a decision on a message; strip its buttons unless told to keep
+    them (a refused snooze must leave the alert actionable). Old context lines
+    are replaced, so repeated updates don't stack."""
+    kept = [b for b in blocks
+            if b.get("type") != "context"
+            and (keep_actions or b.get("type") != "actions")]
     kept.append({"type": "context",
                  "elements": [{"type": "mrkdwn", "text": note}]})
     return kept
@@ -50,7 +55,8 @@ def post_review_item(session, notifier: SlackNotifier, email_row: Email,
         (ln.strip() for ln in email_row.body_text.splitlines() if ln.strip()), "")
     header = (f"🔎 *Review needed* — `{cls_row.category}` "
               f"(confidence {cls_row.confidence:.2f})\n"
-              f"*From:* {email_row.from_addr}\n*Subject:* {email_row.subject}\n"
+              f"*From:* {email_row.from_addr}\n*Subject:* {email_row.subject} "
+              f"(<{gmail_link(email_row.gmail_id)}|open email>)\n"
               f"_{first_line[:EXCERPT_CHARS]}_")
     elements = [{"type": "button", "action_id": "review_new",
                  "text": {"type": "plain_text", "text": "New application"},
