@@ -16,7 +16,10 @@ def make_email(gmail_id="m1", from_addr="no-reply@hackerrank.com"):
 
 
 class FakeAnthropic:
-    """Injected in place of anthropic.Anthropic; pipeline only calls messages.parse."""
+    """Injected in place of anthropic.Anthropic; pipeline only calls messages.parse.
+
+    Accepts either a fixed classification or a callable(user_content) -> classification.
+    """
     def __init__(self, cls):
         self._cls = cls
 
@@ -26,7 +29,10 @@ class FakeAnthropic:
 
         class M:
             def parse(self, **kwargs):
-                return type("R", (), {"parsed_output": outer._cls})()
+                result = outer._cls
+                if callable(result):
+                    result = result(kwargs["messages"][0]["content"])
+                return type("R", (), {"parsed_output": result})()
         return M()
 
 
@@ -88,6 +94,35 @@ def test_backfill_counts_and_history_cursor(session):
     counts = run_backfill(session, gmail, FakeAnthropic(GOOD), "2026/01/01", TZ)
     assert counts["processed"] == 2
     assert get_state(session, "gmail_history_id") == "424242"
+
+
+def test_backfill_processes_oldest_first_so_receipts_close(session):
+    from datetime import timedelta
+    from tracker.models import Obligation
+    assessment_email = EmailIn(
+        gmail_id="older", thread_id="t", from_addr="no-reply@hackerrank.com",
+        subject="Stripe assessment", body_text="complete in 7 days",
+        received_at=NOW, headers={})
+    receipt_email = EmailIn(
+        gmail_id="newer", thread_id="t", from_addr="no-reply@hackerrank.com",
+        subject="Submission received",
+        body_text="Thank you for completing your assessment",
+        received_at=NOW + timedelta(days=1), headers={})
+
+    def classify(user_content):
+        if "Thank you for completing" in user_content:
+            return EmailClassification(
+                is_my_application=True, category="confirmation", company="Stripe",
+                role_title="SWE Intern", deadline_utc=None, deadline_basis="none",
+                actionable=False, confidence=0.95, reasoning="receipt")
+        return GOOD
+
+    # Gmail lists NEWEST first — receipt before the assessment that it closes
+    gmail = FakeGmail([receipt_email, assessment_email])
+    run_backfill(session, gmail, FakeAnthropic(classify), "2026/01/01", TZ)
+    obs = session.query(Obligation).all()
+    assert len(obs) == 1
+    assert obs[0].status == "completed" and obs[0].closed_by == "receipt"
 
 
 def test_wipe_all_data_empties_every_table(session):

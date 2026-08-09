@@ -1,12 +1,27 @@
+import re
+
 from pydantic import BaseModel
 
 from tracker.classify.schemas import EmailClassification, EmailIn
 from tracker.models import Application
 
+_LEGAL_SUFFIXES = re.compile(r"\b(inc|llc|corp|corporation|ltd|plc|gmbh)\b\.?$")
+
 
 def _join_key(name: str) -> str:
-    """Case/whitespace variance is LLM output noise, not naming signal."""
-    return " ".join(name.lower().split())
+    """Punctuation/case/suffix variance is naming noise, not company identity.
+
+    'North.Cloud' / 'North Cloud' / 'north cloud, Inc.' → 'north cloud'.
+    """
+    n = re.sub(r"[^\w\s]", " ", name.lower())
+    n = " ".join(n.split())
+    n = _LEGAL_SUFFIXES.sub("", n)
+    return " ".join(n.split())
+
+
+def _is_variant(a: str, b: str) -> bool:
+    """'millennium' vs 'millennium management' — same words, one extends the other."""
+    return a != b and (a.startswith(b + " ") or b.startswith(a + " "))
 
 _BOT_LOCALPARTS = ("no-reply", "noreply", "do-not-reply", "donotreply",
                    "notifications", "notification", "mailer")
@@ -53,14 +68,27 @@ def resolve_application(session, cls: EmailClassification,
                 _touch(app, email)
                 return ResolveResult(application_id=app.id)
     if candidates:
-        if len(candidates) == 1 and (not role or
-                _role_overlap(role, candidates[0].role_title) > 0.5):
-            app = candidates[0]
-            _touch(app, email)
-            return ResolveResult(application_id=app.id)
         if not role:
+            if len(candidates) == 1:
+                app = candidates[0]
+                _touch(app, email)
+                return ResolveResult(application_id=app.id)
             return ResolveResult(needs_review=True,
                                  review_reason="ambiguous_company_match")
+        fuzzy = [c for c in candidates if _role_overlap(role, c.role_title) > 0.5]
+        if len(fuzzy) == 1:
+            _touch(fuzzy[0], email)
+            return ResolveResult(application_id=fuzzy[0].id)
+        if len(fuzzy) > 1:
+            return ResolveResult(needs_review=True,
+                                 review_reason="ambiguous_company_match")
+        # distinct role at a known company → new application (P13)
+    else:
+        variants = [a for a in session.query(Application).all()
+                    if _is_variant(canonical, a.company_canonical)]
+        if variants:
+            return ResolveResult(needs_review=True,
+                                 review_reason="possible_company_variant")
 
     app = Application(
         company_canonical=canonical, company_display=cls.company,

@@ -1,10 +1,17 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("notion_token", "notion_applications_db_id",
+                     "notion_timeline_db_id", mode="before")
+    @classmethod
+    def _empty_env_means_unset(cls, v):
+        return v or None
 
     database_url: str
     anthropic_api_key: str

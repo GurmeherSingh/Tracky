@@ -3,6 +3,7 @@ from tracker.models import (Application, Classification, Email, FailedJob,
                             get_state, set_state)
 from tracker.notify.slack import SlackNotifier
 from tracker.obligations.lifecycle import apply_closures, create_obligation_if_needed
+from tracker.resolve.resolver import _is_variant, _join_key
 from tracker.state.events import append_event
 
 EXCERPT_LINES = 10
@@ -17,10 +18,6 @@ def _rehydrate(session, email_id: str) -> tuple[EmailIn, EmailClassification]:
     cls_row = (session.query(Classification).filter_by(email_id=email_id)
                .order_by(Classification.created_at.desc()).first())
     return email, EmailClassification.model_validate(cls_row.extracted)
-
-
-def _join_key(name: str) -> str:
-    return " ".join(name.lower().split())
 
 
 def _park(session, email_id: str, note: str | None = None) -> None:
@@ -69,9 +66,12 @@ def pump_review_queue(session, notifier: SlackNotifier) -> int:
         if email_row is None or cls_row is None:
             continue
         company = (cls_row.extracted or {}).get("company") or ""
-        candidates = (session.query(Application)
-                      .filter_by(company_canonical=_join_key(company)).all()
-                      if company else [])
+        candidates = []
+        if company:
+            key = _join_key(company)
+            candidates = [a for a in session.query(Application).all()
+                          if a.company_canonical == key
+                          or _is_variant(key, a.company_canonical)]
         ts = post_review_item(session, notifier, email_row, cls_row, candidates)
         set_state(session, f"review_posted:{job.email_id}", ts)
         posted += 1

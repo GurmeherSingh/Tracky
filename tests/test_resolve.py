@@ -49,3 +49,28 @@ def test_human_sender_marks_engaged(session):
     r = resolve_application(session, make_cls("Stripe"), make_email("jane@stripe.com"))
     app = session.get(Application, r.application_id)
     assert app.human_engaged is True
+
+
+def test_punctuation_variants_share_one_application(session):
+    resolve_application(session, make_cls("North.Cloud"), make_email())
+    r2 = resolve_application(session, make_cls("North Cloud"), make_email())
+    assert r2.created is False
+    assert session.query(Application).count() == 1
+
+
+def test_company_name_variant_goes_to_review_not_new_row(session):
+    resolve_application(session, make_cls("Millennium Management", "Role A"), make_email())
+    r = resolve_application(session, make_cls("Millennium", "Role B"), make_email())
+    assert r.needs_review is True and r.review_reason == "possible_company_variant"
+    assert session.query(Application).count() == 1
+
+
+def test_unique_fuzzy_role_matches_among_multiple_candidates(session):
+    r1 = resolve_application(session, make_cls(
+        "Millennium", "2027 Applied AI Engineer Intern, Miami"), make_email())
+    resolve_application(session, make_cls(
+        "Millennium", "2027 Global ENG and AI Intern"), make_email())
+    r3 = resolve_application(session, make_cls(
+        "Millennium", "2027 Applied AI Engineer Intern, Miami Internship"), make_email())
+    assert r3.created is False and r3.application_id == r1.application_id
+    assert session.query(Application).count() == 2

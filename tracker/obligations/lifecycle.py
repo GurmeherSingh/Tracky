@@ -34,6 +34,17 @@ def create_obligation_if_needed(session, application_id: int,
         return None
     due_at, due_confidence = finalize_deadline(
         cls.deadline_utc, cls.deadline_basis, email.received_at, cls.category)
+    # reminder emails must not duplicate an open obligation of the same type;
+    # they may upgrade an assumed deadline to a stated one
+    existing = session.query(Obligation).filter(
+        Obligation.application_id == application_id,
+        Obligation.type == ob_type,
+        Obligation.status.in_(["open", "unconfirmed"])).first()
+    if existing:
+        if due_confidence == "stated" and existing.due_confidence == "assumed":
+            existing.due_at = due_at
+            existing.due_confidence = "stated"
+        return existing
     ob = Obligation(
         application_id=application_id, type=ob_type,
         title=f"{_TITLES[ob_type]} — {cls.company or 'unknown'}",

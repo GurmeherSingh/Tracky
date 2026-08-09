@@ -94,8 +94,10 @@ def _run_ids(session, gmail, anthropic_client, ids, tz: str) -> dict[str, int]:
 
 
 def run_backfill(session, gmail, anthropic_client, after: str, tz: str) -> dict[str, int]:
-    counts = _run_ids(session, gmail, anthropic_client,
-                      gmail.list_message_ids(GMAIL_QUERY, after=after), tz)
+    # Gmail lists newest-first; closure inference (receipts, next-stage) assumes
+    # chronological arrival, so process oldest-first
+    ids = list(gmail.list_message_ids(GMAIL_QUERY, after=after))
+    counts = _run_ids(session, gmail, anthropic_client, reversed(ids), tz)
     set_state(session, "gmail_history_id", gmail.current_history_id())
     session.commit()
     return counts

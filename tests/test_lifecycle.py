@@ -97,6 +97,29 @@ def test_deadline_pass_marks_unconfirmed_possibly_missed(session):
     assert ob.status == "unconfirmed_possibly_missed" and ob.next_alert_at is None
 
 
+def test_reminder_does_not_duplicate_open_obligation(session):
+    app = make_app(session)
+    ob1 = create_obligation_if_needed(session, app.id, make_cls("assessment"),
+                                      make_email("m1"), TZ)
+    ob2 = create_obligation_if_needed(session, app.id, make_cls("assessment"),
+                                      make_email("m2"), TZ)
+    assert ob2.id == ob1.id
+    from tracker.models import Obligation
+    assert session.query(Obligation).count() == 1
+
+
+def test_reminder_with_stated_deadline_upgrades_assumed(session):
+    app = make_app(session)
+    ob = create_obligation_if_needed(session, app.id, make_cls("assessment"),
+                                     make_email("m1"), TZ)
+    assert ob.due_confidence == "assumed"
+    stated_due = NOW + timedelta(days=5)
+    create_obligation_if_needed(session, app.id,
+                                make_cls("assessment", deadline=stated_due),
+                                make_email("m2"), TZ)
+    assert ob.due_confidence == "stated" and ob.due_at == stated_due
+
+
 def test_obligation_type_mapping():
     assert obligation_type_for(make_cls("assessment")) == "assessment"
     assert obligation_type_for(make_cls("assessment"),
