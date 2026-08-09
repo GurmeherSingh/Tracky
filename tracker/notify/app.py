@@ -1,5 +1,7 @@
+import json
 import re
 import threading
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from slack_bolt import App
@@ -10,7 +12,7 @@ from tracker.models import Alert, Obligation, utcnow
 from tracker.notify.review import (handle_review_assign, handle_review_ignore,
                                    handle_review_new, is_review_resolved,
                                    resolved_blocks)
-from tracker.obligations.escalation import snooze_until, tier_for
+from tracker.obligations.escalation import remind_error, tier_for
 from tracker.obligations.lifecycle import close_obligation
 
 
@@ -82,27 +84,59 @@ def build_app(settings, engine) -> App:
                 note = "✔ already closed"
         _mark_resolved(client, body, note)
 
-    @app.action("alert_snooze")
-    def _alert_snooze(ack, body, client):
+    @app.action("alert_remind")
+    def _alert_remind(ack, body, client):
         ack()
         _, ob_id = _alert_ids(body)
-        keep_actions = False
+        container = body.get("container", {})
+        blocks = body.get("message", {}).get("blocks", [])
+        section = next((b["text"]["text"] for b in blocks
+                        if b.get("type") == "section"), "")
+        meta = json.dumps({"ob": ob_id,
+                           "channel": container.get("channel_id", ""),
+                           "ts": container.get("message_ts", ""),
+                           "text": section[:2500]})
+        default = utcnow() + timedelta(hours=3)
+        client.views_open(trigger_id=body["trigger_id"], view={
+            "type": "modal", "callback_id": "remind_submit",
+            "private_metadata": meta,
+            "title": {"type": "plain_text", "text": "Remind me"},
+            "submit": {"type": "plain_text", "text": "Set reminder"},
+            "blocks": [{"type": "input", "block_id": "when",
+                        "label": {"type": "plain_text",
+                                  "text": "When should I re-alert you?"},
+                        "element": {"type": "datetimepicker", "action_id": "at",
+                                    "initial_date_time": int(default.timestamp())}}],
+        })
+
+    @app.view("remind_submit")
+    def _remind_submit(ack, view, client):
+        meta = json.loads(view["private_metadata"])
+        unix = view["state"]["values"]["when"]["at"]["selected_date_time"]
+        chosen = datetime.fromtimestamp(unix, UTC)
         with session_scope(engine) as session:
-            ob = session.get(Obligation, ob_id)
+            ob = session.get(Obligation, meta["ob"])
             if ob is None or ob.status not in {"open", "unconfirmed"}:
+                ack()
                 note = "✔ already closed"
             else:
-                target = snooze_until(ob.due_at, ob.effort_minutes, utcnow())
-                if target is None:
-                    note = "⏳ too close to the deadline to snooze"
-                    keep_actions = True
-                else:
-                    ob.next_alert_at = target
-                    # re-slot into the rung that will be truthful when it fires
-                    ob.alert_tier = tier_for(ob.due_at, ob.effort_minutes, target)
-                    local = target.astimezone(ZoneInfo(settings.timezone))
-                    note = f"💤 snoozed — next alert {local.strftime('%I:%M %p').lstrip('0')}"
-        _mark_resolved(client, body, note, keep_actions=keep_actions)
+                err = remind_error(ob.due_at, ob.effort_minutes, chosen, utcnow())
+                if err:
+                    ack(response_action="errors", errors={"when": err})
+                    return
+                ob.next_alert_at = chosen
+                # re-slot into the rung that will be truthful when it fires
+                ob.alert_tier = tier_for(ob.due_at, ob.effort_minutes, chosen)
+                ack()
+                local = chosen.astimezone(ZoneInfo(settings.timezone))
+                note = f"⏰ reminder set for {local.strftime('%a %I:%M %p').lstrip('0')}"
+        if meta["channel"] and meta["ts"]:
+            blocks = [{"type": "section",
+                       "text": {"type": "mrkdwn", "text": meta["text"]}},
+                      {"type": "context",
+                       "elements": [{"type": "mrkdwn", "text": note}]}]
+            client.chat_update(channel=meta["channel"], ts=meta["ts"],
+                               text=note, blocks=blocks)
 
     @app.action("alert_junk")
     def _alert_junk(ack, body, client):

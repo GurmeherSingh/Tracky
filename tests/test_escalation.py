@@ -46,14 +46,17 @@ def test_tier_for_reslots_by_time_remaining():
     assert tier_for(due, 120, due - timedelta(hours=2)) == "last_call"
 
 
-def test_snooze_clamps_to_last_call():
-    from tracker.obligations.escalation import snooze_until
+def test_remind_accepts_time_before_last_call():
+    from tracker.obligations.escalation import remind_error
     due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
-    now = due - timedelta(hours=4)          # last_call is due-3h → 1h away
-    assert snooze_until(due, 120, now) == due - timedelta(hours=3)
+    now = due - timedelta(hours=20)
+    assert remind_error(due, 120, due - timedelta(hours=5), now) is None
 
 
-def test_snooze_refuses_inside_last_call_window():
-    from tracker.obligations.escalation import snooze_until
+def test_remind_rejects_past_and_too_late():
+    from tracker.obligations.escalation import remind_error
     due = datetime(2026, 8, 12, 18, 0, tzinfo=UTC)
-    assert snooze_until(due, 120, due - timedelta(hours=2)) is None
+    now = due - timedelta(hours=20)
+    assert "future" in remind_error(due, 120, now - timedelta(hours=1), now)
+    # last_call is due-3h; a reminder after it can't leave time to act
+    assert "Too late" in remind_error(due, 120, due - timedelta(hours=1), now)

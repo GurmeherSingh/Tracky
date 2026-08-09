@@ -60,8 +60,8 @@ def render_alert_blocks(ob: Obligation, company_display: str, tier: str,
     elements = [
         {"type": "button", "action_id": "alert_done",
          "text": {"type": "plain_text", "text": "✔ Done"}, "value": value},
-        {"type": "button", "action_id": "alert_snooze",
-         "text": {"type": "plain_text", "text": "💤 Snooze 3h"}, "value": value},
+        {"type": "button", "action_id": "alert_remind",
+         "text": {"type": "plain_text", "text": "⏰ Remind me"}, "value": value},
         {"type": "button", "action_id": "alert_junk",
          "text": {"type": "plain_text", "text": "🗑 Junk"}, "value": value},
     ]

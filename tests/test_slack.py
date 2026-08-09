@@ -86,7 +86,7 @@ def test_alert_carries_action_buttons(session):
                                                 NOW, TZ)
     actions = [b for b in web.posts[0]["blocks"] if b["type"] == "actions"][0]
     ids = [e["action_id"] for e in actions["elements"]]
-    assert ids == ["alert_done", "alert_snooze", "alert_junk"]
+    assert ids == ["alert_done", "alert_remind", "alert_junk"]
     alert = session.query(Alert).one()
     assert actions["elements"][0]["value"] == f"{alert.id}:{ob.id}"
 

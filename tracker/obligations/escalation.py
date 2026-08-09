@@ -34,15 +34,17 @@ def tier_for(due_at: datetime, effort_minutes: int, at: datetime) -> str:
     return "t48"
 
 
-def snooze_until(due_at: datetime, effort_minutes: int, now: datetime,
-                 hours: int = 3) -> datetime | None:
-    """Snooze can never push past the last realistic start time
-    (due − effort − buffer); inside that window it refuses (None).
-    No waking-hours clamp — a user tapping snooze is plainly awake."""
+def remind_error(due_at: datetime, effort_minutes: int, chosen: datetime,
+                 now: datetime) -> str | None:
+    """A reminder must arrive while acting is still realistic: after now,
+    no later than due − effort − buffer. Returns a user-facing error or None."""
+    if chosen <= now:
+        return "Pick a time in the future."
     last_call_at = tier_time("last_call", due_at, effort_minutes)
-    if now >= last_call_at:
-        return None
-    return min(now + timedelta(hours=hours), last_call_at)
+    if chosen > last_call_at:
+        return ("Too late — by then there wouldn't be enough time left to "
+                "actually do this (deadline minus effort minus a buffer).")
+    return None
 
 
 def next_alert_after(current_tier: str | None, due_at: datetime,
