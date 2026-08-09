@@ -1,0 +1,36 @@
+tracker/notify/review.py
+  s_0f86d25a77c49c::t_6b1f6839da25ff 69-74
+  s_0f86d25a77c49c::t_b71d91410b271a 6
+tracker/ingest/pipeline.py
+  s_0f86d25a77c49c::t_86d5a6a93592c7 97-100
+tracker/config.py
+  s_0f86d25a77c49c::t_4f81645e9bb413 3,10-14
+tests/test_resolve.py
+  s_0f86d25a77c49c::t_bbd561ad52b247 52-76
+tests/test_lifecycle.py
+  s_0f86d25a77c49c::t_f5718459df68c0 100-122
+tests/test_pipeline.py
+  s_0f86d25a77c49c::t_965cc66ea968f9 19-22,32-35
+  s_0f86d25a77c49c::t_2298db7ab5258c 99-127
+tracker/resolve/resolver.py
+  s_0f86d25a77c49c::t_53b72ca8a84b3f 72-75,78-91
+  s_0f86d25a77c49c::t_51ea219b6487c0 1-2,8-9,12-24
+tracker/obligations/lifecycle.py
+  s_0f86d25a77c49c::t_7c5a94494e359d 37-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "94ba0d394e3e39a7ef5b7ce240ef20f3f18b024d",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
