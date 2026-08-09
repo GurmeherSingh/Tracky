@@ -1,0 +1,39 @@
+tracker/classify/prompts.py
+  s_0f86d25a77c49c::t_0b6ffb23ec4aaf 1
+  s_0f86d25a77c49c::t_07de155fa90648 22-25
+  s_0f86d25a77c49c::t_51adcaef0c769a 52-57
+tracker/obligations/lifecycle.py
+  s_0f86d25a77c49c::t_ad97e37b0d1b7c 23-25
+  s_0f86d25a77c49c::t_65ef175738901f 99-101
+  s_0f86d25a77c49c::t_94ba77c44163d0 76,81-89
+tracker/ingest/pipeline.py
+  s_0f86d25a77c49c::t_e98e98aa014d57 36-37
+  s_0f86d25a77c49c::t_5a15437831ae8d 76-79
+  s_0f86d25a77c49c::t_ea5df53703ed4d 87,91-92
+tracker/ingest/gmail_client.py
+  s_0f86d25a77c49c::t_974ada3c3c185c 114-117
+tests/test_lifecycle.py
+  s_0f86d25a77c49c::t_baa0cc76caaf3b 125-151
+  s_0f86d25a77c49c::t_79b074d55254bf 14-15,20-21
+tests/test_pipeline.py
+  s_0f86d25a77c49c::t_75c9931e62379c 91-93
+  s_0f86d25a77c49c::t_55f3f36809e2c4 131-179
+tracker/classify/schemas.py
+  s_0f86d25a77c49c::t_3a9e7fc7604273 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4e02280350cc5ff72f8cf7d97717aa66261e010d",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
