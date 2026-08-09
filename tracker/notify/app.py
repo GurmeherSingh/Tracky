@@ -1,4 +1,5 @@
 import re
+import threading
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -82,6 +83,12 @@ def build_app(settings, engine) -> App:
     return app
 
 
-def run_socket_mode(settings, engine) -> None:
-    handler = SocketModeHandler(build_app(settings, engine), settings.slack_app_token)
-    handler.start()
+def run_socket_mode(settings, engine, handler=None, block=None) -> None:
+    # SocketModeHandler.start() installs a SIGINT handler, which raises
+    # ValueError outside the main thread; connect() + parking this thread
+    # gives identical behavior without touching signals
+    if handler is None:
+        handler = SocketModeHandler(build_app(settings, engine),
+                                    settings.slack_app_token)
+    handler.connect()
+    (block or threading.Event().wait)()

@@ -8,6 +8,8 @@ def test_settings_reads_env(monkeypatch):
     monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
     monkeypatch.setenv("SLACK_ALERTS_CHANNEL", "C111")
     monkeypatch.setenv("SLACK_TRACKER_CHANNEL", "C222")
+    # real .env may legitimately set notion values; keep this test hermetic
+    monkeypatch.setenv("NOTION_TOKEN", "")
     s = Settings()
     assert s.database_url == "sqlite://"
     assert s.timezone == "America/Los_Angeles"  # default
