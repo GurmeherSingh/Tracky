@@ -111,14 +111,6 @@ class Alert(Base):
     marked_junk: Mapped[bool] = mapped_column(sa.Boolean, default=False)
 
 
-class EvalLabel(Base):
-    __tablename__ = "eval_labels"
-    email_id: Mapped[str] = mapped_column(sa.ForeignKey("emails.gmail_id"), primary_key=True)
-    true_category: Mapped[str] = mapped_column(sa.String)
-    true_deadline: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
-    labeled_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
-
-
 class SyncState(Base):
     __tablename__ = "sync_state"
     key: Mapped[str] = mapped_column(sa.String, primary_key=True)

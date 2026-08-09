@@ -21,6 +21,10 @@ Therefore, whenever writing or modifying code in this repo:
    save tokens.
 5. **Checkpoint understanding.** At the end of each task, summarize the 2–3 things the user should
    be able to say about it on camera (the "if asked, say this" version).
+6. **Design discussion BEFORE each task — and STOP for the user.** Before writing a task's code,
+   lay out the system-design choice space (2–3 realistic approaches, trade-offs, recommendation),
+   then END THE TURN and wait for the user's take. Do not write tests or implementation in the
+   same turn as the design discussion.
 
 ## Project context
 
@@ -28,7 +32,7 @@ Therefore, whenever writing or modifying code in this repo:
 - Implementation plan (18 TDD tasks): `docs/superpowers/plans/2026-08-06-inbox-obligation-tracker.md`
 - Both are **local-only — never `git add` or commit anything under `docs/superpowers/`**.
 - Postgres is the source of truth; Slack and Notion are one-directional projections.
-- `tracker/classify/` must stay pure (no DB, no network, no clock) — the eval harness depends on it.
+- `tracker/classify/` must stay pure (no DB, no network, no clock) — keeps classification deterministic and unit-testable.
 - All timestamps timezone-aware UTC. Naive datetimes are bugs.
 - Gmail scope is exactly `gmail.readonly`; nothing is ever sent on the user's behalf.
 - No fabricated data anywhere, including the demo (P15).

@@ -12,9 +12,7 @@ def main() -> None:
     p_backfill = sub.add_parser("backfill", help="validation run over real mail")
     p_backfill.add_argument("--after", required=True, help="YYYY/MM/DD")
     sub.add_parser("run", help="start scheduler + socket mode")
-    sub.add_parser("eval", help="score current prompt against eval_labels")
     sub.add_parser("resync", help="force date-ranged re-ingest")
-    sub.add_parser("label-export", help="bootstrap eval labels from predictions")
     p_wipe = sub.add_parser("wipe", help="delete ALL data (post-validation cleanup)")
     p_wipe.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     args = parser.parse_args()
@@ -35,13 +33,6 @@ def main() -> None:
     elif args.command == "run":
         from tracker.jobs import run_forever
         run_forever(engine, settings)
-    elif args.command == "eval":
-        import anthropic
-
-        from tracker.evals.runner import run_eval
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        with session_scope(engine) as session:
-            print(run_eval(session, client).pretty())
     elif args.command == "resync":
         import anthropic
 
@@ -52,10 +43,6 @@ def main() -> None:
         with session_scope(engine) as session:
             counts = run_backfill(session, gmail, client, "2026/01/01", settings.timezone)
         print(counts)
-    elif args.command == "label-export":
-        from tracker.evals.runner import export_labels
-        with session_scope(engine) as session:
-            print(export_labels(session))
     elif args.command == "wipe":
         from tracker.models import wipe_all_data
         if not args.yes:

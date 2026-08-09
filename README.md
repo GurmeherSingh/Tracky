@@ -32,7 +32,7 @@ Design rules that shape everything:
   are rows, so crashes and redeploys can't lose them ("database as durable timer").
 - **The classifier core (`tracker/classify/`) is pure** — no DB, no network beyond the injected
   API client, no clock. Enforced by a test that AST-parses the package for forbidden imports.
-  This is what makes the eval harness a cheap replay over stored email bodies.
+  This keeps classification deterministic to test and cheap to replay over stored email bodies.
 - **Inverted confidence thresholds:** "is this my application?" favors precision (unsure → review
   queue, never silently written); "is this an obligation?" favors recall (unsure → create it and
   alert anyway, honestly labeled `unconfirmed`). A wrong DB row pollutes forever; a missed
@@ -81,8 +81,6 @@ copy .env.example .env                     # then fill in every value
 ```bash
 python -m tracker.cli backfill --after 2026/06/01   # validation run over real mail
 python -m tracker.cli run                            # scheduler + Socket Mode (the live system)
-python -m tracker.cli label-export                   # bootstrap eval labels from predictions
-python -m tracker.cli eval                           # score current prompt against labels
 python -m tracker.cli resync                         # force date-ranged re-ingest
 python -m tracker.cli wipe                           # delete ALL data (validation cleanup)
 ```
@@ -108,15 +106,11 @@ poisoned emails land in a 3-strikes `failed_jobs` table surfaced by the daily di
   `unconfirmed_possibly_missed`, because the system distinguishes what it knows from what it
   suspects. A ✅ reaction closes manually; nothing ever waits on it.
 
-## Evaluation
+## Instrumentation
 
-`label-export` bootstraps `eval_labels` from the model's own predictions (label-by-correction:
-you then fix the wrong rows — caveat: labels are anchored to model output). `eval` replays every
-labeled email's stored body through the *current* prompt and reports precision/recall per
-category, a confusion matrix, and deadline-extraction accuracy (±1h). Every classification row is
-stamped with `prompt_version` and `model`, so comparing prompts is a SQL query, not a guess.
-Live instrumentation tracks alert precision (❌ reactions mark junk), review-queue rate, and
-closure paths.
+Every classification row is stamped with `prompt_version` and `model`, so comparing prompt
+revisions is a SQL query, not a guess. Live signals track alert precision (❌ reactions mark
+junk), review-queue rate, and which of the four closure paths retired each obligation.
 
 ## Known limitations
 
@@ -129,7 +123,6 @@ closure paths.
 - Company matching joins on the lowercased extracted name. "Stripe" vs "Stripe, Inc." would
   create two rows (a safe split, never a wrong merge); a normalization table is a planned
   iteration if validation shows real duplicates.
-- Eval labels are bootstrapped from model output before human correction.
 
 ## Roadmap
 
