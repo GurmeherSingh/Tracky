@@ -1,3 +1,5 @@
+import re
+
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -17,7 +19,7 @@ def build_app(settings, engine) -> App:
         with session_scope(engine) as session:
             handle_review_new(session, email_id, settings.timezone)
 
-    @app.action("review_assign")
+    @app.action(re.compile(r"review_assign_\d+"))
     def _assign(ack, body):
         ack()
         email_id, app_id = body["actions"][0]["value"].split(":")

@@ -45,6 +45,25 @@ def test_post_review_item_has_buttons(session):
     assert "review_new" in action_ids and "review_ignore" in action_ids
 
 
+def test_candidate_buttons_have_unique_action_ids(session):
+    email = seed_review(session)
+    apps = []
+    for role in ("SWE Intern", "Data Intern"):
+        app = Application(company_canonical="stripe", company_display="Stripe",
+                          role_title=role, source="applied", first_seen_at=NOW,
+                          last_contact_at=NOW, status_derived="applied")
+        session.add(app)
+        session.flush()
+        apps.append(app)
+    web = FakeWebClient()
+    notifier = SlackNotifier(web, "C-A", "C-T")
+    cls_row = session.query(Classification).one()
+    post_review_item(session, notifier, email, cls_row, apps)
+    action_ids = [el["action_id"] for b in web.posts[0]["blocks"]
+                  if b["type"] == "actions" for el in b["elements"]]
+    assert len(action_ids) == len(set(action_ids)), f"duplicate action_ids: {action_ids}"
+
+
 def test_pump_posts_each_item_once(session):
     seed_review(session)
     web = FakeWebClient()

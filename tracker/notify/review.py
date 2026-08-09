@@ -42,7 +42,8 @@ def post_review_item(session, notifier: SlackNotifier, email_row: Email,
                  "value": email_row.gmail_id}]
     for app in candidates[:3]:
         label = f"Belongs to {app.company_display} — {app.role_title}"[:75]
-        elements.append({"type": "button", "action_id": "review_assign",
+        # slack requires unique action_ids per message; bolt matches by regex
+        elements.append({"type": "button", "action_id": f"review_assign_{app.id}",
                          "text": {"type": "plain_text", "text": label},
                          "value": f"{email_row.gmail_id}:{app.id}"})
     elements.append({"type": "button", "action_id": "review_ignore",
