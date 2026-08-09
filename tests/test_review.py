@@ -4,8 +4,9 @@ from tracker.classify.schemas import EmailClassification
 from tracker.models import (Application, Classification, Email, FailedJob,
                             Obligation, get_state)
 from tracker.notify.review import (handle_review_assign, handle_review_ignore,
-                                   handle_review_new, post_review_item,
-                                   pump_review_queue)
+                                   handle_review_new, is_review_resolved,
+                                   post_review_item, pump_review_queue,
+                                   resolved_blocks)
 from tracker.notify.slack import SlackNotifier
 from tests.test_slack import FakeWebClient
 
@@ -98,3 +99,23 @@ def test_handle_ignore_parks_without_writes(session):
     handle_review_ignore(session, "m1")
     assert session.query(Application).count() == 0
     assert session.query(FailedJob).one().parked is True
+
+
+def test_is_review_resolved_flips_after_handling(session):
+    seed_review(session)
+    assert is_review_resolved(session, "m1") is False
+    handle_review_new(session, "m1", TZ)
+    assert is_review_resolved(session, "m1") is True
+
+
+def test_resolved_blocks_drop_buttons_and_append_note():
+    blocks = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": "header"}},
+        {"type": "actions", "elements": [{"type": "button"}]},
+    ]
+    out = resolved_blocks(blocks, "✔ Attached to Stripe")
+    assert all(b["type"] != "actions" for b in out)
+    assert out[0]["type"] == "section"
+    assert out[-1] == {"type": "context",
+                       "elements": [{"type": "mrkdwn",
+                                     "text": "✔ Attached to Stripe"}]}

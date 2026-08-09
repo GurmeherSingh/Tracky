@@ -20,6 +20,20 @@ def _rehydrate(session, email_id: str) -> tuple[EmailIn, EmailClassification]:
     return email, EmailClassification.model_validate(cls_row.extracted)
 
 
+def is_review_resolved(session, email_id: str) -> bool:
+    job = session.query(FailedJob).filter_by(
+        email_id=email_id, stage="review_pending").one_or_none()
+    return bool(job and job.parked)
+
+
+def resolved_blocks(blocks: list, note: str) -> list:
+    """Strip the buttons off a review message and stamp the decision on it."""
+    kept = [b for b in blocks if b.get("type") != "actions"]
+    kept.append({"type": "context",
+                 "elements": [{"type": "mrkdwn", "text": note}]})
+    return kept
+
+
 def _park(session, email_id: str, note: str | None = None) -> None:
     job = session.query(FailedJob).filter_by(
         email_id=email_id, stage="review_pending").one_or_none()
