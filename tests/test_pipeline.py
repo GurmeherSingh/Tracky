@@ -88,6 +88,9 @@ class FakeGmail:
     def current_history_id(self):
         return "424242"
 
+    def profile_email(self):
+        return "me@example.com"
+
 
 def test_backfill_counts_and_history_cursor(session):
     gmail = FakeGmail([make_email("a"), make_email("b")])
@@ -123,6 +126,55 @@ def test_backfill_processes_oldest_first_so_receipts_close(session):
     obs = session.query(Obligation).all()
     assert len(obs) == 1
     assert obs[0].status == "completed" and obs[0].closed_by == "receipt"
+
+
+def test_backfill_self_reply_closes_scheduling_without_recreating(session):
+    from datetime import timedelta
+    invite = EmailIn(
+        gmail_id="older", thread_id="t", from_addr="scheduling@ats.rippling.com",
+        subject="Please provide your interview availability",
+        body_text="pick a slot", received_at=NOW, headers={})
+    reply = EmailIn(
+        gmail_id="newer", thread_id="t", from_addr="me@example.com",
+        subject="Re: Please provide your interview availability",
+        body_text="I am free Monday 10am", received_at=NOW + timedelta(hours=2),
+        headers={})
+    invite_cls = EmailClassification(
+        is_my_application=True, category="interview_invite", company="Stripe",
+        role_title="SWE Intern", deadline_utc=None, deadline_basis="none",
+        actionable=True, confidence=0.9, reasoning="r")
+    gmail = FakeGmail([reply, invite])  # Gmail lists newest first
+    run_backfill(session, gmail, FakeAnthropic(invite_cls), "2026/01/01", TZ)
+    obs = session.query(Obligation).all()
+    assert len(obs) == 1, [o.type for o in obs]
+    assert obs[0].status == "completed" and obs[0].closed_by == "self_reply"
+
+
+def test_confirmed_interview_email_closes_scheduling_in_pipeline(session):
+    from datetime import timedelta
+    invite = EmailIn(
+        gmail_id="older", thread_id="t", from_addr="scheduling@ats.rippling.com",
+        subject="Please provide your interview availability",
+        body_text="pick a slot", received_at=NOW, headers={})
+    confirmation = EmailIn(
+        gmail_id="newer", thread_id="t", from_addr="mail@ats.rippling.com",
+        subject="Interview with Stripe",
+        body_text="Your interview is confirmed for Aug 10 at 2pm",
+        received_at=NOW + timedelta(hours=3), headers={})
+
+    def classify(user_content):
+        confirmed = "confirmed" in user_content
+        return EmailClassification(
+            is_my_application=True, category="interview_invite", company="Stripe",
+            role_title="SWE Intern", deadline_utc=None, deadline_basis="none",
+            actionable=not confirmed, confidence=0.9, reasoning="r",
+            is_confirmation=confirmed)
+
+    gmail = FakeGmail([confirmation, invite])
+    run_backfill(session, gmail, FakeAnthropic(classify), "2026/01/01", TZ)
+    obs = session.query(Obligation).all()
+    assert len(obs) == 1, [o.type for o in obs]
+    assert obs[0].status == "completed" and obs[0].closed_by == "next_stage"
 
 
 def test_wipe_all_data_empties_every_table(session):

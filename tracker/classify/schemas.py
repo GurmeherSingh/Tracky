@@ -23,6 +23,7 @@ class EmailClassification(BaseModel):
     deadline_utc: datetime | None
     deadline_basis: Literal["stated", "relative", "assumed", "none"]
     actionable: bool
+    is_confirmation: bool = False
     confidence: float
     reasoning: str
 

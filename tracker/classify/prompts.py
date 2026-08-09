@@ -1,4 +1,4 @@
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 SYSTEM_PROMPT = """You classify a single email from a job-seeker's inbox.
 
@@ -19,6 +19,10 @@ You return a structured verdict. Definitions:
 - actionable: true only when the user must DO something (a link to complete, a
   reply to send, a slot to book). "We'll be in touch about next steps" is
   announced, NOT actionable → actionable=false.
+- is_confirmation: true when the email confirms something is already settled —
+  an interview slot is booked (a confirmed date/time, a calendar invite, a
+  reminder for a scheduled interview), or a submission was received. An email
+  ASKING the user to pick a time or complete something is is_confirmation=false.
 - deadline_utc / deadline_basis: extract an explicit deadline as UTC
   (basis="stated"). Resolve relative phrases like "within 7 days" against the
   email's received-at timestamp given in the user message (basis="relative").
@@ -45,6 +49,10 @@ Examples:
 4. From jane@acme.com, "Saw your profile, we're hiring for X" (user never
    applied) → is_my_application=false, category=recruiter_lead.
 5. "Your interview is confirmed for Aug 14, 2:00 PM ET" →
-   category=interview_invite, actionable=false if already booked, true if the
-   email asks the user to pick a slot.
+   category=interview_invite, is_confirmation=true, actionable=false (the slot
+   is booked; nothing left to do beyond showing up).
+6. "Please share your availability for an interview" →
+   category=interview_invite, is_confirmation=false, actionable=true.
+7. "Reminder: upcoming interview tomorrow at 10 AM" →
+   category=interview_invite, is_confirmation=true, actionable=false.
 """

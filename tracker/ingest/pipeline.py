@@ -33,7 +33,8 @@ def record_failure(session, email_id: str, stage: str, error: str) -> FailedJob:
     return job
 
 
-def process_email(session, email: EmailIn, anthropic_client, tz: str) -> str:
+def process_email(session, email: EmailIn, anthropic_client, tz: str,
+                  self_addr: str | None = None) -> str:
     log = get_logger(gmail_id=email.gmail_id)
     inserted = insert_email_idempotent(
         session, gmail_id=email.gmail_id, thread_id=email.thread_id,
@@ -72,8 +73,10 @@ def process_email(session, email: EmailIn, anthropic_client, tz: str) -> str:
 
     append_event(session, result.application_id, cls.category,
                  email.received_at, email_id=email.gmail_id)
-    apply_closures(session, result.application_id, cls, email)
-    create_obligation_if_needed(session, result.application_id, cls, email, tz)
+    apply_closures(session, result.application_id, cls, email, self_addr=self_addr)
+    # the user's own sent mail can close obligations but never owes them one
+    if not (self_addr and email.from_addr.lower() == self_addr.lower()):
+        create_obligation_if_needed(session, result.application_id, cls, email, tz)
     log.info("processed", application_id=result.application_id,
              category=cls.category, model=model)
     return "processed"
@@ -81,10 +84,12 @@ def process_email(session, email: EmailIn, anthropic_client, tz: str) -> str:
 
 def _run_ids(session, gmail, anthropic_client, ids, tz: str) -> dict[str, int]:
     counts: dict[str, int] = {}
+    self_addr = gmail.profile_email()
     for message_id in ids:
         try:
             email = gmail.fetch_email(message_id)
-            disp = process_email(session, email, anthropic_client, tz)
+            disp = process_email(session, email, anthropic_client, tz,
+                                 self_addr=self_addr)
         except Exception as e:  # one bad email must never kill the run
             record_failure(session, message_id, "ingest", str(e))
             disp = "failed"

@@ -11,12 +11,14 @@ NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
 TZ = "America/Los_Angeles"
 
 
-def make_cls(category, actionable=True, confidence=0.9, deadline=None):
+def make_cls(category, actionable=True, confidence=0.9, deadline=None,
+             is_confirmation=False):
     return EmailClassification(
         is_my_application=True, category=category, company="Stripe",
         role_title="SWE Intern",
         deadline_utc=deadline, deadline_basis="stated" if deadline else "none",
-        actionable=actionable, confidence=confidence, reasoning="r")
+        actionable=actionable, confidence=confidence, reasoning="r",
+        is_confirmation=is_confirmation)
 
 
 def make_email(gmail_id="m1", from_addr="no-reply@hackerrank.com", body="do it"):
@@ -118,6 +120,33 @@ def test_reminder_with_stated_deadline_upgrades_assumed(session):
                                 make_cls("assessment", deadline=stated_due),
                                 make_email("m2"), TZ)
     assert ob.due_confidence == "stated" and ob.due_at == stated_due
+
+
+def test_confirmed_interview_closes_scheduling_reply(session):
+    app = make_app(session)
+    create_obligation_if_needed(session, app.id, make_cls("interview_invite"),
+                                make_email(), TZ)
+    closed = apply_closures(session, app.id,
+                            make_cls("interview_invite", is_confirmation=True),
+                            make_email("m2"))
+    assert closed and closed[0].type == "scheduling_reply"
+    assert closed[0].status == "completed" and closed[0].closed_by == "next_stage"
+
+
+def test_confirmed_interview_creates_no_obligation():
+    assert obligation_type_for(
+        make_cls("interview_invite", is_confirmation=True)) is None
+
+
+def test_self_sent_reply_closes_scheduling_reply(session):
+    app = make_app(session)
+    create_obligation_if_needed(session, app.id, make_cls("interview_invite"),
+                                make_email(), TZ)
+    closed = apply_closures(session, app.id, make_cls("interview_invite"),
+                            make_email("m2", from_addr="me@example.com"),
+                            self_addr="Me@Example.com")
+    assert closed and closed[0].closed_by == "self_reply"
+    assert closed[0].status == "completed"
 
 
 def test_obligation_type_mapping():

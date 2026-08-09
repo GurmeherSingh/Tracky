@@ -111,6 +111,10 @@ class GmailClient:
     def current_history_id(self) -> str:
         return str(_execute(self._svc.users().getProfile(userId="me"))["historyId"])
 
+    def profile_email(self) -> str:
+        return _execute(self._svc.users().getProfile(
+            userId="me"))["emailAddress"].lower()
+
 
 def build_gmail_client(credentials_path: str = "credentials.json",
                        token_path: str = "token.json") -> GmailClient:

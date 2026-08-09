@@ -20,7 +20,9 @@ def obligation_type_for(cls: EmailClassification,
     if cls.category == "assessment":
         return "take_home" if "take-home" in subject_and_body.lower() else "assessment"
     if cls.category == "interview_invite":
-        return "scheduling_reply"
+        # a booked slot is a state, not an ask — it must not (re)create the
+        # scheduling obligation it just satisfied
+        return None if cls.is_confirmation else "scheduling_reply"
     if cls.category == "offer":
         return "offer_response"
     return None
@@ -71,11 +73,20 @@ def _close(ob: Obligation, status: str, closed_by: str, at: datetime) -> None:
 
 
 def apply_closures(session, application_id: int, cls: EmailClassification,
-                   email: EmailIn) -> list[Obligation]:
+                   email: EmailIn, self_addr: str | None = None) -> list[Obligation]:
     closed: list[Obligation] = []
     open_obs = _open_obligations(session, application_id)
     if not open_obs:
         return closed
+    # mail sent by the user themselves is direct proof the scheduling reply
+    # happened, whatever the classifier thinks the email is
+    if self_addr and email.from_addr.lower() == self_addr.lower():
+        for ob in [o for o in open_obs if o.type == "scheduling_reply"]:
+            _close(ob, "completed", "self_reply", email.received_at)
+            closed.append(ob)
+            open_obs.remove(ob)
+        if not open_obs:
+            return closed
     body = (email.subject + " " + email.body_text).lower()
     if cls.category == "rejection":
         for ob in open_obs:
@@ -85,6 +96,9 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
     if cls.category in {"interview_invite", "offer"}:
         earlier = {"interview_invite": {"assessment", "take_home"},
                    "offer": {"assessment", "take_home", "scheduling_reply"}}[cls.category]
+        if cls.category == "interview_invite" and cls.is_confirmation:
+            # a confirmed slot completes the scheduling loop
+            earlier = earlier | {"scheduling_reply"}
         for ob in open_obs:
             if ob.type in earlier:
                 _close(ob, "completed", "next_stage", email.received_at)
