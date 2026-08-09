@@ -9,6 +9,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tracker.db import session_scope
 from tracker.models import Alert, Obligation, utcnow
+from tracker.notify.assistant import answer_question, strip_mention
 from tracker.notify.review import (handle_review_assign, handle_review_ignore,
                                    handle_review_new, is_review_resolved,
                                    resolved_blocks)
@@ -32,7 +33,32 @@ def _alert_ids(body) -> tuple[int, int]:
 
 
 def build_app(settings, engine) -> App:
+    import anthropic
+
     app = App(token=settings.slack_bot_token)
+    llm = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    def _answer(text, say, thread_ts=None):
+        question = strip_mention(text)
+        if not question:
+            return
+        with session_scope(engine) as session:
+            answer = answer_question(session, llm, question, utcnow(),
+                                     settings.timezone)
+        say(text=answer, thread_ts=thread_ts)
+
+    @app.event("app_mention")
+    def _mention(event, say):
+        _answer(event.get("text", ""), say,
+                thread_ts=event.get("thread_ts") or event.get("ts"))
+
+    @app.event("message")
+    def _dm(event, say):
+        # DMs only; ignore our own replies and message edits/joins (subtypes)
+        if (event.get("channel_type") != "im" or event.get("bot_id")
+                or event.get("subtype")):
+            return
+        _answer(event.get("text", ""), say)
 
     @app.action("review_new")
     def _new(ack, body, client):
