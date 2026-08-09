@@ -1,0 +1,24 @@
+tracker/notify/app.py
+  s_0f86d25a77c49c::t_a3612910614ccb 2
+  s_0f86d25a77c49c::t_3342e558cc7507 86-94
+tests/test_config.py
+  s_0f86d25a77c49c::t_ed851e92b1b3a4 11-12
+tests/test_socket_mode.py
+  s_0f86d25a77c49c::t_226662acd664df 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fd301dbe74563cdf6bdf65e8d29b5346c2279fc1",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
