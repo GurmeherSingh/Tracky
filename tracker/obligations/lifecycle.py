@@ -6,6 +6,7 @@ from tracker.models import Obligation
 from tracker.obligations.escalation import EFFORT_MINUTES
 
 UNCONFIRMED_THRESHOLD = 0.6
+_DUE_RANK = {"assumed": 0, "relative": 1, "stated": 2}
 _COMPLETION_PHRASES = ("submitted", "completed", "received your solution",
                        "thank you for completing", "successfully finished")
 _TITLES = {"assessment": "Assessment", "take_home": "Take-home",
@@ -37,15 +38,15 @@ def create_obligation_if_needed(session, application_id: int,
     due_at, due_confidence = finalize_deadline(
         cls.deadline_utc, cls.deadline_basis, email.received_at, cls.category)
     # reminder emails must not duplicate an open obligation of the same type;
-    # they may upgrade an assumed deadline to a stated one
+    # a better-grounded deadline (stated > relative > assumed) replaces a weaker one
     existing = session.query(Obligation).filter(
         Obligation.application_id == application_id,
         Obligation.type == ob_type,
         Obligation.status.in_(["open", "unconfirmed"])).first()
     if existing:
-        if due_confidence == "stated" and existing.due_confidence == "assumed":
+        if _DUE_RANK[due_confidence] > _DUE_RANK[existing.due_confidence]:
             existing.due_at = due_at
-            existing.due_confidence = "stated"
+            existing.due_confidence = due_confidence
         return existing
     ob = Obligation(
         application_id=application_id, type=ob_type,
@@ -103,6 +104,10 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
             if ob.type in earlier:
                 _close(ob, "completed", "next_stage", email.received_at)
                 closed.append(ob)
+        return closed
+    # an email that is itself an actionable ask can't be a receipt for one —
+    # assessment instructions routinely say 'once submitted...'
+    if obligation_type_for(cls, body) in {"assessment", "take_home"}:
         return closed
     if any(p in body for p in _COMPLETION_PHRASES):
         for ob in open_obs:

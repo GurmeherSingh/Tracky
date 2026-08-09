@@ -196,6 +196,41 @@ def test_tracked_applications_reach_the_llm(session):
     assert "Stripe" in seen[1] and "id=" in seen[1]
 
 
+def test_resends_collapse_and_stated_deadline_wins(session):
+    """The Millennium sequence: three identical Workday resends whose bodies
+    mention 'submitted', then a HackerRank invite with the real stated deadline."""
+    from datetime import timedelta
+    stated_due = NOW + timedelta(days=7, minutes=90)
+    resends = [EmailIn(
+        gmail_id=f"resend{i}", thread_id="tw", from_addr="mlp@myworkday.com",
+        subject="Next Steps: Technical Assessment",
+        body_text="Complete your assessment. Once submitted, results follow.",
+        received_at=NOW + timedelta(hours=i), headers={}) for i in range(3)]
+    invite = EmailIn(
+        gmail_id="hr", thread_id="th", from_addr="support@hackerrankforwork.com",
+        subject="Millennium Test Invitation",
+        body_text="Your test is due August 13.",
+        received_at=NOW + timedelta(hours=2, minutes=30), headers={})
+
+    def classify(user_content):
+        received = datetime.fromisoformat(
+            user_content.splitlines()[0].split(": ", 1)[1])
+        stated = "Test Invitation" in user_content
+        return EmailClassification(
+            is_my_application=True, category="assessment", company="Millennium",
+            role_title="AI Intern",
+            deadline_utc=stated_due if stated else received + timedelta(days=7),
+            deadline_basis="stated" if stated else "relative",
+            actionable=True, confidence=0.9, reasoning="r")
+
+    gmail = FakeGmail([invite, resends[2], resends[1], resends[0]])  # newest first
+    run_backfill(session, gmail, FakeAnthropic(classify), "2026/01/01", TZ)
+    obs = session.query(Obligation).all()
+    assert len(obs) == 1, [(o.type, o.status, o.closed_by) for o in obs]
+    assert obs[0].status == "open"
+    assert obs[0].due_at == stated_due and obs[0].due_confidence == "stated"
+
+
 def test_wipe_all_data_empties_every_table(session):
     process_email(session, make_email(), FakeAnthropic(GOOD), TZ)
     record_failure(session, "m9", "classify", "boom")

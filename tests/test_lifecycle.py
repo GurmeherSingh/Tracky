@@ -12,11 +12,12 @@ TZ = "America/Los_Angeles"
 
 
 def make_cls(category, actionable=True, confidence=0.9, deadline=None,
-             is_confirmation=False):
+             is_confirmation=False, basis=None):
     return EmailClassification(
         is_my_application=True, category=category, company="Stripe",
         role_title="SWE Intern",
-        deadline_utc=deadline, deadline_basis="stated" if deadline else "none",
+        deadline_utc=deadline,
+        deadline_basis=basis or ("stated" if deadline else "none"),
         actionable=actionable, confidence=confidence, reasoning="r",
         is_confirmation=is_confirmation)
 
@@ -120,6 +121,46 @@ def test_reminder_with_stated_deadline_upgrades_assumed(session):
                                 make_cls("assessment", deadline=stated_due),
                                 make_email("m2"), TZ)
     assert ob.due_confidence == "stated" and ob.due_at == stated_due
+
+
+def test_stated_deadline_upgrades_relative(session):
+    app = make_app(session)
+    ob = create_obligation_if_needed(
+        session, app.id,
+        make_cls("assessment", deadline=NOW + timedelta(days=7), basis="relative"),
+        make_email("m1"), TZ)
+    assert ob.due_confidence == "relative"
+    stated_due = NOW + timedelta(days=7, minutes=19)
+    create_obligation_if_needed(
+        session, app.id,
+        make_cls("assessment", deadline=stated_due, basis="stated"),
+        make_email("m2"), TZ)
+    assert ob.due_confidence == "stated" and ob.due_at == stated_due
+
+
+def test_relative_does_not_downgrade_stated(session):
+    app = make_app(session)
+    stated_due = NOW + timedelta(days=5)
+    ob = create_obligation_if_needed(
+        session, app.id, make_cls("assessment", deadline=stated_due),
+        make_email("m1"), TZ)
+    create_obligation_if_needed(
+        session, app.id,
+        make_cls("assessment", deadline=NOW + timedelta(days=7), basis="relative"),
+        make_email("m2"), TZ)
+    assert ob.due_confidence == "stated" and ob.due_at == stated_due
+
+
+def test_resend_of_ask_does_not_receipt_close_itself(session):
+    app = make_app(session)
+    ob = create_obligation_if_needed(session, app.id, make_cls("assessment"),
+                                     make_email("m1"), TZ)
+    # a resend of the ask whose body mentions 'submitted' in its instructions
+    closed = apply_closures(
+        session, app.id, make_cls("assessment"),
+        make_email("m2", body="Complete the test. Once submitted, results follow."))
+    assert closed == []
+    assert ob.status == "open"
 
 
 def test_confirmed_interview_closes_scheduling_reply(session):

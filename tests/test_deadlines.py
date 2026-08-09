@@ -10,9 +10,9 @@ def test_stated_deadline_passes_through():
     assert finalize_deadline(due, "stated", RECEIVED, "assessment") == (due, "stated")
 
 
-def test_relative_deadline_counts_as_stated():
+def test_relative_deadline_keeps_relative_confidence():
     due = RECEIVED + timedelta(days=7)
-    assert finalize_deadline(due, "relative", RECEIVED, "assessment") == (due, "stated")
+    assert finalize_deadline(due, "relative", RECEIVED, "assessment") == (due, "relative")
 
 
 def test_missing_deadline_on_assessment_gets_assumed_default():
