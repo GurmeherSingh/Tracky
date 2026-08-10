@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from tracker.models import Application, Email, Event, Obligation
 from tracker.notify.assistant import (answer_question, application_status,
                                       list_open_obligations, recent_activity,
-                                      set_reminder, strip_mention)
+                                      safe_answer, set_reminder, strip_mention)
 
 NOW = datetime(2026, 8, 9, 18, 0, tzinfo=UTC)
 TZ = "America/Los_Angeles"
@@ -93,7 +93,10 @@ class ScriptedClient:
         class M:
             def create(self, **kwargs):
                 outer.calls.append(kwargs)
-                return outer._responses.pop(0)
+                nxt = outer._responses.pop(0)
+                if isinstance(nxt, Exception):
+                    raise nxt
+                return nxt
         return M()
 
 
@@ -117,6 +120,20 @@ def test_answer_question_runs_tools_then_answers(session):
     second = client.calls[1]["messages"]
     assert second[-1]["content"][0]["type"] == "tool_result"
     assert "Millennium" in second[-1]["content"][0]["content"]
+
+
+def test_safe_answer_retries_once_before_giving_up(session):
+    seed(session)
+    client = ScriptedClient([TimeoutError("boom"), _text("All good.")])
+    assert safe_answer(session, client, "what's due?", NOW, TZ) == "All good."
+    assert len(client.calls) == 2
+
+
+def test_safe_answer_says_something_when_the_model_is_unreachable(session):
+    seed(session)
+    client = ScriptedClient([TimeoutError("boom"), TimeoutError("boom again")])
+    answer = safe_answer(session, client, "what's due?", NOW, TZ)
+    assert "couldn't reach" in answer and len(client.calls) == 2
 
 
 def test_answer_question_survives_bad_tool_args(session):

@@ -9,7 +9,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tracker.db import session_scope
 from tracker.models import Alert, Obligation, utcnow
-from tracker.notify.assistant import answer_question, strip_mention
+from tracker.notify.assistant import safe_answer, strip_mention
 from tracker.notify.review import (handle_review_assign, handle_review_ignore,
                                    handle_review_new, is_review_resolved,
                                    resolved_blocks)
@@ -36,15 +36,16 @@ def build_app(settings, engine) -> App:
     import anthropic
 
     app = App(token=settings.slack_bot_token)
-    llm = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    # fail fast rather than hang the handler on a stalled connection
+    llm = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=30.0)
 
     def _answer(text, say, thread_ts=None):
         question = strip_mention(text)
         if not question:
             return
         with session_scope(engine) as session:
-            answer = answer_question(session, llm, question, utcnow(),
-                                     settings.timezone)
+            answer = safe_answer(session, llm, question, utcnow(),
+                                 settings.timezone)
         say(text=answer, thread_ts=thread_ts)
 
     @app.event("app_mention")

@@ -5,12 +5,15 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
+from tracker.log import get_logger
 from tracker.models import Application, Event, Obligation
 from tracker.notify.fmt import gmail_link, notion_link
 from tracker.obligations.escalation import remind_error
 
 MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
+UNREACHABLE = ("I couldn't reach the model just then — looks like a network "
+               "hiccup on my end. Ask me again?")
 
 SYSTEM = """You are Tracky, a Slack assistant for one job-seeker's application
 ledger. Answer ONLY from tool results — never invent applications, deadlines,
@@ -176,3 +179,15 @@ def answer_question(session, client, question: str,
                                 "content": json.dumps(out, default=str)})
         messages.append({"role": "user", "content": results})
     return "I ran out of tool calls before finishing — try a narrower question."
+
+
+def safe_answer(session, client, question: str, now: datetime, tz: str) -> str:
+    """Never leave a question unanswered — silence reads as a broken bot."""
+    last: Exception | None = None
+    for _ in range(2):  # API timeouts are usually transient; one retry, then speak
+        try:
+            return answer_question(session, client, question, now, tz)
+        except Exception as e:
+            last = e
+    get_logger(component="assistant").warning("answer_failed", error=str(last))
+    return UNREACHABLE
