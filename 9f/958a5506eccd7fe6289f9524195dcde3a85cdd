@@ -1,0 +1,61 @@
+tests/test_briefing.py
+  s_0f86d25a77c49c::t_b2042feea2c51f 1-114
+tests/test_jobs.py
+  s_0f86d25a77c49c::t_893c8fa82e98b7 42-52
+tests/test_notion_sync.py
+  s_0f86d25a77c49c::t_0b19e67f79e02a 39-52,56
+  s_0f86d25a77c49c::t_eabd288d738f6f 4-6
+  s_0f86d25a77c49c::t_1fe4b0ecfb249a 95-147
+alembic/versions/9c4d7e15b83a_add_applications_briefed_at.py
+  s_0f86d25a77c49c::t_86dbbe8edce335 1-23
+tracker/notify/assistant.py
+  s_0f86d25a77c49c::t_07ca02b4874326 208-209
+  s_0f86d25a77c49c::t_a24d90eade9601 218-219,224
+  s_0f86d25a77c49c::t_ee06a891b44150 152-153
+  s_0f86d25a77c49c::t_d6854e151269a5 191-192,194,198
+  s_0f86d25a77c49c::t_e2e79bc53a9006 145-151,154-173,175-178
+tracker/models.py
+  s_0f86d25a77c49c::t_cd36bb92468a09 75-76
+tracker/notify/app.py
+  s_0f86d25a77c49c::t_8eb6cd6d8c1cba 42-50,57-63,65
+  s_0f86d25a77c49c::t_1d1dddc130a07e 18
+tracker/sync/notion_sync.py
+  s_0f86d25a77c49c::t_3155a1099a7280 26-87
+  s_0f86d25a77c49c::t_76a4e62add7151 1,8-10
+tests/test_assistant.py
+  s_0f86d25a77c49c::t_9112fc55b8750b 140-176
+  s_0f86d25a77c49c::t_82a38a1007cb32 7-8
+tracker/jobs.py
+  s_0f86d25a77c49c::t_07b23e38c18164 27-31
+  s_0f86d25a77c49c::t_21b87cf0d47e21 96-103
+  s_0f86d25a77c49c::t_95d604fc908760 19
+  s_0f86d25a77c49c::t_bb35f0dd4bdb1c 88-90
+  s_0f86d25a77c49c::t_bc52c76bfea1c6 129-131
+tracker/research/enrich.py
+  s_0f86d25a77c49c::t_64cb0ef15b41a2 71-72
+  s_0f86d25a77c49c::t_b71d6c6567900b 1-3,6-36,90-130
+  s_0f86d25a77c49c::t_27b2e93f208378 37-70,73-89
+  s_0f86d25a77c49c::t_e636cc8ed34535 4-5
+tests/test_enrich.py
+  s_0f86d25a77c49c::t_9bada12c0d28bf 5-6
+  s_0f86d25a77c49c::t_e58b944698b167 129-205
+  s_0f86d25a77c49c::t_c0481d093fb295 1-4,7-128,206-219
+tracker/research/briefing.py
+  s_0f86d25a77c49c::t_5af2a30b1abbf9 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9f958a5506eccd7fe6289f9524195dcde3a85cdd",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
