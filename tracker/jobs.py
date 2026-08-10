@@ -81,11 +81,13 @@ def run_forever(engine, settings) -> None:
             log.info("notion_reconciled", **counts)
 
     scheduler = BlockingScheduler(timezone="UTC")
-    scheduler.add_job(guarded("ingest", ingest_job), "interval", minutes=5)
+    # 2 rather than 1: a catch-up run after downtime can outlast a 1-minute
+    # tick, and APScheduler skips overlapping runs rather than queueing them
+    scheduler.add_job(guarded("ingest", ingest_job), "interval", minutes=2)
     # 1-minute sweep: user-set reminders should land near their chosen minute;
     # the next_alert_at query is indexed, so the extra ticks cost nothing
     scheduler.add_job(guarded("sweep", sweep_job), "interval", minutes=1)
     scheduler.add_job(guarded("digest", digest_job), "interval", minutes=15)
-    scheduler.add_job(guarded("notion", notion_job), "interval", minutes=15)
+    scheduler.add_job(guarded("notion", notion_job), "interval", minutes=5)
     log.info("scheduler_started")
     scheduler.start()
