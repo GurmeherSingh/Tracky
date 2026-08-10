@@ -19,11 +19,14 @@ def application_properties(app: Application, open_ob_count: int) -> dict:
     }
 
 
-def reconcile(session, notion, database_id: str,
-              sleep=time.sleep) -> dict[str, int]:
+def reconcile(session, notion, database_id: str, sleep=time.sleep,
+              only_missing: bool = False) -> dict[str, int]:
     log = get_logger(component="notion_sync")
     counts = {"created": 0, "updated": 0, "skipped": 0}
-    for app in session.query(Application).all():
+    query = session.query(Application)
+    if only_missing:
+        query = query.filter(Application.notion_page_id.is_(None))
+    for app in query.all():
         open_count = session.query(Obligation).filter(
             Obligation.application_id == app.id,
             Obligation.status.in_(["open", "unconfirmed"])).count()

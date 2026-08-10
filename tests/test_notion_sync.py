@@ -58,6 +58,18 @@ def test_reconcile_creates_then_updates(session):
     assert counts["updated"] == 1 and counts["created"] == 0
 
 
+def test_only_missing_creates_new_pages_without_touching_existing(session):
+    make_app(session, display="Stripe", page_id="page-existing")
+    make_app(session, display="Belvedere")
+    notion = FakeNotion()
+    counts = reconcile(session, notion, "db1", sleep=lambda s: None,
+                       only_missing=True)
+    assert counts["created"] == 1 and counts["updated"] == 0
+    assert notion.pages.updated == []
+    assert (notion.pages.created[0]["Company"]["rich_text"][0]["text"]["content"]
+            == "Belvedere")
+
+
 def test_notion_failure_never_raises(session):
     make_app(session)
     counts = reconcile(session, FakeNotion(fail_on={"create"}), "db1",

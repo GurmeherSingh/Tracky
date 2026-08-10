@@ -62,6 +62,12 @@ def run_forever(engine, settings) -> None:
             counts = run_incremental(session, gmail, llm, settings.timezone)
             pump_review_queue(session, notifier)
             update_board(session, notifier, datetime.now(UTC), settings.timezone)
+            if notion is not None:
+                # reconcile swallows per-application errors; anything that
+                # escaped here would roll back the ingested emails with it
+                from tracker.sync.notion_sync import reconcile
+                reconcile(session, notion, settings.notion_applications_db_id,
+                          only_missing=True)
             log.info("ingest_done", **counts)
 
     def sweep_job():
