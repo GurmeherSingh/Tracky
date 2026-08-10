@@ -103,6 +103,8 @@ class DigestData(BaseModel):
     unconfirmed: list[str]
     review_count: int
     monday_trend: str | None = None
+    failed_count: int = 0
+    parked_count: int = 0
 
 
 def render_digest(data: DigestData, now: datetime, tz: str) -> str:
@@ -120,6 +122,11 @@ def render_digest(data: DigestData, now: datetime, tz: str) -> str:
         lines += ["", "*⚠️ Unconfirmed / possibly missed:*"] + [f"• {s}" for s in data.unconfirmed]
     if data.review_count:
         lines += ["", f"*🔎 {data.review_count} item(s) waiting in the review queue*"]
+    if data.failed_count:
+        note = f"*🛠 {data.failed_count} email(s) failed to process"
+        if data.parked_count:
+            note += f" — {data.parked_count} parked after 3 attempts, not in the ledger"
+        lines += ["", note + "*"]
     if data.monday_trend:
         lines += ["", f"*📈 {data.monday_trend}*"]
     return "\n".join(lines)

@@ -110,7 +110,6 @@ class Alert(Base):
     tier: Mapped[str] = mapped_column(sa.String)
     sent_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     slack_ts: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    model_confidence: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     marked_junk: Mapped[bool] = mapped_column(sa.Boolean, default=False)
 
 

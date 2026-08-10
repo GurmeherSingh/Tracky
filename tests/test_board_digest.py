@@ -102,6 +102,18 @@ def test_monday_digest_has_trend(session):
     assert data.monday_trend is not None and "Response rate" in data.monday_trend
 
 
+def test_digest_surfaces_processing_failures(session):
+    from tracker.models import FailedJob
+    seed(session)
+    session.add(FailedJob(email_id="x", stage="classify", error="boom", strikes=2))
+    session.add(FailedJob(email_id="y", stage="classify", error="boom",
+                          strikes=3, parked=True))
+    session.flush()
+    data = build_digest_data(session, NOW, TZ)
+    assert data.failed_count == 2 and data.parked_count == 1
+    assert "parked" in render_digest(data, NOW, TZ)
+
+
 def test_render_digest_lists_obligations():
     data = DigestData(open_obs=[("Assessment", "HRT", "due Mon 10 AM")],
                       movement=["HRT → assessment"], today_interviews=[],

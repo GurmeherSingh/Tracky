@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 from tracker.classify.schemas import EmailClassification, EmailIn
 from tracker.models import (Application, Classification, Email, FailedJob,
                             Obligation, get_state, wipe_all_data)
-from tracker.ingest.pipeline import process_email, record_failure, run_backfill
+from tracker.ingest.pipeline import (process_email, record_failure,
+                                     retry_failed, run_backfill)
 
 NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
 TZ = "America/Los_Angeles"
@@ -66,6 +67,47 @@ def test_noise_stops_before_llm(session):
             raise AssertionError("LLM must not be called for gate-1 noise")
 
     assert process_email(session, email, Exploding(), TZ) == "noise"
+
+
+class Flaky:
+    """Raises on the first `fail_calls` parse attempts, then classifies fine."""
+    def __init__(self, fail_calls, cls):
+        self.fail_calls, self._cls, self.calls = fail_calls, cls, 0
+
+    @property
+    def messages(self):
+        outer = self
+
+        class M:
+            def parse(self, **kwargs):
+                outer.calls += 1
+                if outer.calls <= outer.fail_calls:
+                    raise RuntimeError("model unreachable")
+                return type("R", (), {"parsed_output": outer._cls})()
+        return M()
+
+
+def test_transient_classification_failure_is_recovered_next_pass(session):
+    llm = Flaky(2, GOOD)  # classify_email retries twice before giving up
+    assert process_email(session, make_email(), llm, TZ) == "failed"
+    assert session.query(FailedJob).count() == 1
+
+    counts = retry_failed(session, FakeGmail([]), llm, TZ)
+
+    assert counts.get("processed") == 1
+    assert session.query(FailedJob).count() == 0  # cleared once it succeeds
+    assert session.query(Obligation).count() == 1
+
+
+def test_retries_park_a_permanently_broken_email(session):
+    llm = Flaky(99, GOOD)
+    process_email(session, make_email(), llm, TZ)
+    for _ in range(2):
+        retry_failed(session, FakeGmail([]), llm, TZ)
+    job = session.query(FailedJob).one()
+    assert job.strikes == 3 and job.parked is True
+    retry_failed(session, FakeGmail([]), llm, TZ)
+    assert session.query(FailedJob).one().strikes == 3  # parked means left alone
 
 
 def test_three_strikes_parks_job(session):

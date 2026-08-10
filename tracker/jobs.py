@@ -7,9 +7,9 @@ from slack_sdk import WebClient
 
 from tracker.db import session_scope
 from tracker.ingest.gmail_client import GmailAuthExpired, build_gmail_client
-from tracker.ingest.pipeline import run_incremental
+from tracker.ingest.pipeline import MAX_STRIKES, retry_failed, run_incremental
 from tracker.log import get_logger
-from tracker.models import get_state, set_state
+from tracker.models import FailedJob, get_state, set_state
 from tracker.notify.app import run_socket_mode
 from tracker.notify.board import update_board
 from tracker.notify.digest import send_digest_if_due
@@ -18,6 +18,20 @@ from tracker.notify.slack import SlackNotifier
 from tracker.obligations.sweep import run_sweep
 
 AUTH_ALARM_COOLDOWN = timedelta(hours=6)
+
+
+def maybe_park_alarm(session, notifier) -> None:
+    """Parking means the system has given up on an email — the one failure a
+    human must hear about, since nothing downstream will ever mention it."""
+    parked = session.query(FailedJob).filter_by(parked=True).count()
+    last = int(get_state(session, "parked_count") or 0)
+    if parked > last:
+        notifier.post_alert(
+            f"🛠 *{parked - last} email(s) parked* after {MAX_STRIKES} failed "
+            "attempts — they are not in the ledger and won't be retried. "
+            "Inspect the `failed_jobs` table.")
+    if parked != last:
+        set_state(session, "parked_count", str(parked))
 
 
 def _maybe_auth_alarm(session, notifier: SlackNotifier) -> None:
@@ -60,6 +74,9 @@ def run_forever(engine, settings) -> None:
     def ingest_job():
         with session_scope(engine) as session:
             counts = run_incremental(session, gmail, llm, settings.timezone)
+            retry_failed(session, gmail, llm, settings.timezone,
+                         self_addr=gmail.profile_email())
+            maybe_park_alarm(session, notifier)
             pump_review_queue(session, notifier)
             update_board(session, notifier, datetime.now(UTC), settings.timezone)
             if notion is not None:

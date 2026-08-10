@@ -33,6 +33,8 @@ def build_digest_data(session, now: datetime, tz: str) -> DigestData:
                        ["unconfirmed", "unconfirmed_possibly_missed"])).all()]
     review_count = session.query(FailedJob).filter_by(
         stage="review_pending", parked=False).count()
+    processing = session.query(FailedJob).filter(
+        FailedJob.stage != "review_pending").all()
     monday_trend = None
     if local.weekday() == 0:
         apps = session.query(Application).filter_by(source="applied").all()
@@ -44,7 +46,9 @@ def build_digest_data(session, now: datetime, tz: str) -> DigestData:
                         f"have any non-confirmation event ({pct}%)")
     return DigestData(open_obs=open_obs, movement=movement,
                       today_interviews=today_interviews, unconfirmed=unconfirmed,
-                      review_count=review_count, monday_trend=monday_trend)
+                      review_count=review_count, monday_trend=monday_trend,
+                      failed_count=len(processing),
+                      parked_count=sum(1 for j in processing if j.parked))
 
 
 def send_digest_if_due(session, notifier: SlackNotifier, now: datetime,

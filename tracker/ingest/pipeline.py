@@ -35,7 +35,6 @@ def record_failure(session, email_id: str, stage: str, error: str) -> FailedJob:
 
 def process_email(session, email: EmailIn, anthropic_client, tz: str,
                   self_addr: str | None = None) -> str:
-    log = get_logger(gmail_id=email.gmail_id)
     inserted = insert_email_idempotent(
         session, gmail_id=email.gmail_id, thread_id=email.thread_id,
         from_addr=email.from_addr, subject=email.subject,
@@ -43,7 +42,14 @@ def process_email(session, email: EmailIn, anthropic_client, tz: str,
         raw={"headers": email.headers})
     if not inserted:
         return "duplicate"
+    return classify_and_apply(session, email, anthropic_client, tz, self_addr)
 
+
+def classify_and_apply(session, email: EmailIn, anthropic_client, tz: str,
+                       self_addr: str | None = None) -> str:
+    """Everything after the email row exists — separate so a failed attempt
+    can be replayed without the idempotent insert short-circuiting it."""
+    log = get_logger(gmail_id=email.gmail_id)
     gate = run_gates(email)
     if gate.route == "noise":
         log.info("gated_noise", reason=gate.reason)
@@ -83,6 +89,46 @@ def process_email(session, email: EmailIn, anthropic_client, tz: str,
     log.info("processed", application_id=result.application_id,
              category=cls.category, model=model)
     return "processed"
+
+
+RETRYABLE_STAGES = ("classify", "ingest")
+
+
+def _stored_email(session, gmail_id: str) -> EmailIn | None:
+    row = session.get(Email, gmail_id)
+    if row is None:
+        return None
+    return EmailIn(gmail_id=row.gmail_id, thread_id=row.thread_id,
+                   from_addr=row.from_addr, subject=row.subject,
+                   body_text=row.body_text, received_at=row.received_at,
+                   headers=(row.raw or {}).get("headers", {}))
+
+
+def retry_failed(session, gmail, anthropic_client, tz: str,
+                 self_addr: str | None = None) -> dict[str, int]:
+    """Re-attempt emails that failed transiently. Without this the strike
+    counter can never advance: a re-seen email short-circuits as a duplicate,
+    so a one-off model timeout would keep an email out of the ledger forever."""
+    log = get_logger(component="retry")
+    counts: dict[str, int] = {}
+    jobs = session.query(FailedJob).filter(
+        FailedJob.parked.is_(False),
+        FailedJob.stage.in_(RETRYABLE_STAGES)).all()
+    for job in jobs:
+        try:
+            email = _stored_email(session, job.email_id) or gmail.fetch_email(job.email_id)
+            disp = classify_and_apply(session, email, anthropic_client, tz, self_addr)
+        except Exception as e:  # the fetch itself failed — count it as a strike
+            record_failure(session, job.email_id, job.stage, str(e))
+            disp = "failed"
+        counts[disp] = counts.get(disp, 0) + 1
+        if disp != "failed":
+            session.delete(job)  # recovered — stop tracking it
+            log.info("retry_recovered", gmail_id=job.email_id, disposition=disp)
+        session.commit()
+    if counts:
+        log.info("retry_pass_done", **counts)
+    return counts
 
 
 def _run_ids(session, gmail, anthropic_client, ids, tz: str) -> dict[str, int]:
