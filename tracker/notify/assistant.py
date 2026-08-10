@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 
 from tracker.models import Application, Event, Obligation
+from tracker.notify.fmt import gmail_link, notion_link
 from tracker.obligations.escalation import remind_error
 
 MODEL = "claude-sonnet-5"
@@ -13,14 +14,27 @@ MAX_TOOL_ROUNDS = 5
 
 SYSTEM = """You are Tracky, a Slack assistant for one job-seeker's application
 ledger. Answer ONLY from tool results — never invent applications, deadlines,
-or statuses. Be concise; use Slack mrkdwn (*bold*, bullets). Times shown to the
-user should be in their local timezone ({tz}). The current time is {now}.
+or statuses. Times shown to the user should be in their local timezone ({tz}).
+The current time is {now}.
+
+Formatting is Slack mrkdwn, not standard markdown: *single asterisks* for bold
+(never **double**), _underscores_ for italic, and • for bullets.
+
+Link fields in tool results arrive ready to paste, in the form <url|label>.
+Reproduce them exactly — never rewrite one as [label](url). Include the email
+link whenever the user might want to open the message behind an answer; leave
+it out of long summaries where a link per line would be noise.
+
 For set_reminder, pass an ISO-8601 datetime; interpret the user's casual times
 ("at 6", "tonight") in their timezone."""
 
 
 def strip_mention(text: str) -> str:
     return re.sub(r"<@[^>]+>", "", text or "").strip()
+
+
+def _mail_link(email_id: str | None) -> str | None:
+    return f"<{gmail_link(email_id)}|open email>" if email_id else None
 
 
 def _fmt(dt: datetime, tz: str) -> str:
@@ -37,7 +51,8 @@ def list_open_obligations(session, now: datetime, tz: str) -> list[dict]:
     return [{"obligation_id": ob.id, "company": company, "type": ob.type,
              "title": ob.title, "due_local": _fmt(ob.due_at, tz),
              "hours_left": round((ob.due_at - now).total_seconds() / 3600, 1),
-             "due_confidence": ob.due_confidence, "status": ob.status}
+             "due_confidence": ob.due_confidence, "status": ob.status,
+             "email": _mail_link(ob.source_email_id)}
             for ob, company in rows]
 
 
@@ -57,11 +72,15 @@ def application_status(session, company: str, tz: str) -> list[dict]:
         out.append({"company": app.company_display, "role": app.role_title,
                     "status": app.status_derived,
                     "last_contact": _fmt(app.last_contact_at, tz),
+                    "notion": (f"<{notion_link(app.notion_page_id)}|Notion page>"
+                               if app.notion_page_id else None),
                     "recent_events": [{"kind": e.kind,
-                                       "at": _fmt(e.occurred_at, tz)}
+                                       "at": _fmt(e.occurred_at, tz),
+                                       "link": _mail_link(e.email_id)}
                                       for e in events],
                     "open_obligations": [{"obligation_id": o.id, "type": o.type,
-                                          "due_local": _fmt(o.due_at, tz)}
+                                          "due_local": _fmt(o.due_at, tz),
+                                          "email": _mail_link(o.source_email_id)}
                                          for o in obs]})
     return out
 
@@ -73,7 +92,8 @@ def recent_activity(session, days: int, now: datetime, tz: str) -> list[dict]:
             .filter(Event.occurred_at >= since)
             .order_by(Event.occurred_at.desc()).limit(50).all())
     return [{"company": company, "kind": ev.kind,
-             "at": _fmt(ev.occurred_at, tz)} for ev, company in rows]
+             "at": _fmt(ev.occurred_at, tz), "link": _mail_link(ev.email_id)}
+            for ev, company in rows]
 
 
 def set_reminder(session, obligation_id: int, when_iso: str,

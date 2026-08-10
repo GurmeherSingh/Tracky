@@ -1,10 +1,10 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from tracker.models import Application, Event, Obligation
+from tracker.models import Application, Email, Event, Obligation
 from tracker.notify.assistant import (answer_question, application_status,
-                                      list_open_obligations, set_reminder,
-                                      strip_mention)
+                                      list_open_obligations, recent_activity,
+                                      set_reminder, strip_mention)
 
 NOW = datetime(2026, 8, 9, 18, 0, tzinfo=UTC)
 TZ = "America/Los_Angeles"
@@ -13,13 +13,18 @@ TZ = "America/Los_Angeles"
 def seed(session):
     app = Application(company_canonical="millennium", company_display="Millennium",
                       role_title="AI Intern", source="applied", first_seen_at=NOW,
-                      last_contact_at=NOW, status_derived="assessment")
+                      last_contact_at=NOW, status_derived="assessment",
+                      notion_page_id="24-52-48")
     session.add(app)
+    session.add(Email(gmail_id="gm1", thread_id="t1", from_addr="ta@millennium.com",
+                      subject="Assessment", body_text="", received_at=NOW))
     session.flush()
-    session.add(Event(application_id=app.id, kind="assessment", occurred_at=NOW))
+    session.add(Event(application_id=app.id, kind="assessment", occurred_at=NOW,
+                      email_id="gm1"))
     ob = Obligation(application_id=app.id, type="assessment",
                     title="Assessment — Millennium", due_at=NOW + timedelta(hours=30),
-                    due_confidence="stated", status="open", effort_minutes=120)
+                    due_confidence="stated", status="open", effort_minutes=120,
+                    source_email_id="gm1")
     session.add(ob)
     session.flush()
     return app, ob
@@ -42,6 +47,25 @@ def test_application_status_matches_fuzzy_case(session):
     assert out[0]["status"] == "assessment"
     assert out[0]["recent_events"][0]["kind"] == "assessment"
     assert len(out[0]["open_obligations"]) == 1
+
+
+def test_open_obligations_carry_a_ready_made_slack_link(session):
+    seed(session)
+    out = list_open_obligations(session, NOW, TZ)
+    assert out[0]["email"] == "<https://mail.google.com/mail/#all/gm1|open email>"
+
+
+def test_application_status_links_events_and_notion_page(session):
+    seed(session)
+    out = application_status(session, "millen", TZ)
+    assert out[0]["notion"] == "<https://www.notion.so/245248|Notion page>"
+    assert "mail.google.com/mail/#all/gm1" in out[0]["recent_events"][0]["link"]
+
+
+def test_recent_activity_links_each_event(session):
+    seed(session)
+    out = recent_activity(session, 7, NOW, TZ)
+    assert "mail.google.com/mail/#all/gm1" in out[0]["link"]
 
 
 def test_set_reminder_validates_and_writes(session):
