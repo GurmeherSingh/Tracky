@@ -142,8 +142,40 @@ TOOL_SCHEMAS = [
                       "required": ["obligation_id", "when_iso"]}},
 ]
 
+BRIEF_SCHEMA = {
+    "name": "brief_company",
+    "description": "Research a company on the web and append an interview "
+                   "briefing to its Notion page: what they do, what they say "
+                   "they value, recent news with dates, the interview process "
+                   "if anyone has published it, and questions worth asking. "
+                   "Only works for companies already in the ledger. Takes a "
+                   "minute or two and posts its own note while it works, so "
+                   "your reply should report the finished result.",
+    "input_schema": {"type": "object",
+                     "properties": {"company": {"type": "string"}},
+                     "required": ["company"]}}
 
-def _dispatch(session, name: str, args: dict, now: datetime, tz: str):
+
+def tool_schemas(can_brief: bool = False) -> list[dict]:
+    """Hide brief_company unless a briefer was supplied — a tool the model can
+    see but nothing can execute produces confident promises and no briefing."""
+    return TOOL_SCHEMAS + ([BRIEF_SCHEMA] if can_brief else [])
+
+
+def _brief(briefer, company: str) -> dict:
+    if briefer is None:
+        return {"ok": False, "error": "briefing is not configured on this instance"}
+    out = briefer(company)
+    page_id = out.pop("notion_page_id", None)
+    if page_id:  # link formatting stays in the Slack layer, like every other tool
+        out["notion"] = f"<{notion_link(page_id)}|Notion page>"
+    return out
+
+
+def _dispatch(session, name: str, args: dict, now: datetime, tz: str,
+              briefer=None):
+    if name == "brief_company":
+        return _brief(briefer, str(args["company"]))
     if name == "list_open_obligations":
         return list_open_obligations(session, now, tz)
     if name == "application_status":
@@ -156,13 +188,14 @@ def _dispatch(session, name: str, args: dict, now: datetime, tz: str):
     return {"error": f"unknown tool {name}"}
 
 
-def answer_question(session, client, question: str,
-                    now: datetime, tz: str) -> str:
+def answer_question(session, client, question: str, now: datetime, tz: str,
+                    briefer=None) -> str:
     system = SYSTEM.format(tz=tz, now=now.astimezone(ZoneInfo(tz)).isoformat())
+    tools = tool_schemas(can_brief=briefer is not None)
     messages = [{"role": "user", "content": question}]
     for _ in range(MAX_TOOL_ROUNDS):
         resp = client.messages.create(model=MODEL, max_tokens=700,
-                                      system=system, tools=TOOL_SCHEMAS,
+                                      system=system, tools=tools,
                                       messages=messages)
         if resp.stop_reason != "tool_use":
             return "".join(b.text for b in resp.content
@@ -172,7 +205,8 @@ def answer_question(session, client, question: str,
         for block in resp.content:
             if getattr(block, "type", "") == "tool_use":
                 try:
-                    out = _dispatch(session, block.name, block.input, now, tz)
+                    out = _dispatch(session, block.name, block.input, now, tz,
+                                    briefer)
                 except Exception as e:  # a bad tool call must not kill the answer
                     out = {"error": str(e)}
                 results.append({"type": "tool_result", "tool_use_id": block.id,
@@ -181,12 +215,13 @@ def answer_question(session, client, question: str,
     return "I ran out of tool calls before finishing — try a narrower question."
 
 
-def safe_answer(session, client, question: str, now: datetime, tz: str) -> str:
+def safe_answer(session, client, question: str, now: datetime, tz: str,
+                briefer=None) -> str:
     """Never leave a question unanswered — silence reads as a broken bot."""
     last: Exception | None = None
     for _ in range(2):  # API timeouts are usually transient; one retry, then speak
         try:
-            return answer_question(session, client, question, now, tz)
+            return answer_question(session, client, question, now, tz, briefer)
         except Exception as e:
             last = e
     get_logger(component="assistant").warning("answer_failed", error=str(last))

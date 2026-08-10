@@ -4,7 +4,8 @@ from types import SimpleNamespace
 from tracker.models import Application, Email, Event, Obligation
 from tracker.notify.assistant import (answer_question, application_status,
                                       list_open_obligations, recent_activity,
-                                      safe_answer, set_reminder, strip_mention)
+                                      safe_answer, set_reminder, strip_mention,
+                                      tool_schemas)
 
 NOW = datetime(2026, 8, 9, 18, 0, tzinfo=UTC)
 TZ = "America/Los_Angeles"
@@ -134,6 +135,43 @@ def test_safe_answer_says_something_when_the_model_is_unreachable(session):
     client = ScriptedClient([TimeoutError("boom"), TimeoutError("boom again")])
     answer = safe_answer(session, client, "what's due?", NOW, TZ)
     assert "couldn't reach" in answer and len(client.calls) == 2
+
+
+def test_the_briefing_tool_is_offered_only_when_briefing_is_possible():
+    names = [t["name"] for t in tool_schemas(can_brief=False)]
+    assert "brief_company" not in names
+    assert "brief_company" in [t["name"] for t in tool_schemas(can_brief=True)]
+
+
+def test_tracky_can_trigger_a_briefing(session):
+    seed(session)
+    asked = []
+
+    def briefer(company):
+        asked.append(company)
+        return {"ok": True, "company": "Millennium", "blocks": 12,
+                "notion_page_id": "24-52-48"}
+
+    client = ScriptedClient([_tool_use("brief_company", {"company": "Millennium"}),
+                             _text("Done — briefing is on the page.")])
+    answer = answer_question(session, client, "brief me on Millennium", NOW, TZ,
+                             briefer=briefer)
+
+    assert answer == "Done — briefing is on the page."
+    assert asked == ["Millennium"]
+    result = client.calls[1]["messages"][-1]["content"][0]["content"]
+    # the page id becomes a paste-ready Slack link before the model sees it
+    assert "<https://www.notion.so/245248|Notion page>" in result
+    assert "notion_page_id" not in result
+
+
+def test_asking_for_a_briefing_without_notion_configured_is_declined(session):
+    seed(session)
+    client = ScriptedClient([_tool_use("brief_company", {"company": "Millennium"}),
+                             _text("I can't do that right now.")])
+    answer_question(session, client, "brief me", NOW, TZ)
+    result = client.calls[1]["messages"][-1]["content"][0]["content"]
+    assert "not configured" in result
 
 
 def test_answer_question_survives_bad_tool_args(session):

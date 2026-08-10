@@ -72,6 +72,8 @@ class Application(Base):
     status_derived: Mapped[str] = mapped_column(sa.String, default="applied")
     human_engaged: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     notion_page_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    # null means "owed a briefing" — the retry mechanism is the absence of a stamp
+    briefed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
 
 
 class Event(Base):

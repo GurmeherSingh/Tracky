@@ -39,3 +39,14 @@ def test_no_failures_no_noise(session):
     n = FakeNotifier()
     maybe_park_alarm(session, n)
     assert n.posts == []
+
+
+def test_a_parked_briefing_is_not_an_email_alarm(session):
+    """The alarm's text claims an email is missing from the ledger. A briefing
+    is cosmetic — firing it here would make that claim untrue."""
+    n = FakeNotifier()
+    session.add(FailedJob(email_id="app:7", stage="briefing", error="boom",
+                          strikes=3, parked=True))
+    session.flush()
+    maybe_park_alarm(session, n)
+    assert n.posts == []

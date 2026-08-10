@@ -15,6 +15,7 @@ from tracker.notify.review import (handle_review_assign, handle_review_ignore,
                                    resolved_blocks)
 from tracker.obligations.escalation import remind_error
 from tracker.obligations.lifecycle import close_obligation
+from tracker.research.enrich import brief_one
 
 
 def _mark_resolved(client, body, note: str, keep_actions: bool = False) -> None:
@@ -38,14 +39,30 @@ def build_app(settings, engine) -> App:
     app = App(token=settings.slack_bot_token)
     # fail fast rather than hang the handler on a stalled connection
     llm = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=30.0)
+    # research runs a multi-search server loop and legitimately takes minutes,
+    # so it cannot share the conversational client's 30-second budget
+    researcher = anthropic.Anthropic(api_key=settings.anthropic_api_key,
+                                     timeout=600.0)
+
+    notion = None
+    if settings.notion_token and settings.notion_applications_db_id:
+        from notion_client import Client as NotionClient
+        notion = NotionClient(auth=settings.notion_token)
 
     def _answer(text, say, thread_ts=None):
         question = strip_mention(text)
         if not question:
             return
         with session_scope(engine) as session:
+            briefer = None
+            if notion is not None:
+                def briefer(company):
+                    return brief_one(session, researcher, notion, company,
+                                     utcnow(),
+                                     progress=lambda m: say(text=m,
+                                                            thread_ts=thread_ts))
             answer = safe_answer(session, llm, question, utcnow(),
-                                 settings.timezone)
+                                 settings.timezone, briefer=briefer)
         say(text=answer, thread_ts=thread_ts)
 
     @app.event("app_mention")

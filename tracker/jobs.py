@@ -16,6 +16,7 @@ from tracker.notify.digest import send_digest_if_due
 from tracker.notify.review import pump_review_queue
 from tracker.notify.slack import SlackNotifier
 from tracker.obligations.sweep import run_sweep
+from tracker.research.enrich import BRIEFING_STAGE, enrich_applications
 
 AUTH_ALARM_COOLDOWN = timedelta(hours=6)
 
@@ -23,7 +24,11 @@ AUTH_ALARM_COOLDOWN = timedelta(hours=6)
 def maybe_park_alarm(session, notifier) -> None:
     """Parking means the system has given up on an email — the one failure a
     human must hear about, since nothing downstream will ever mention it."""
-    parked = session.query(FailedJob).filter_by(parked=True).count()
+    # briefings are excluded: the alarm below claims an email is missing from
+    # the ledger, and a failed briefing costs nothing but page decoration
+    parked = session.query(FailedJob).filter(
+        FailedJob.parked.is_(True),
+        FailedJob.stage != BRIEFING_STAGE).count()
     last = int(get_state(session, "parked_count") or 0)
     if parked > last:
         notifier.post_alert(
@@ -80,12 +85,21 @@ def run_forever(engine, settings) -> None:
             pump_review_queue(session, notifier)
             update_board(session, notifier, datetime.now(UTC), settings.timezone)
             if notion is not None:
-                # reconcile swallows per-application errors; anything that
-                # escaped here would roll back the ingested emails with it
+                # reconcile swallows per-application errors; the emails are
+                # already committed per-email, but an escaping exception would
+                # still discard this tick's uncommitted board and review work
                 from tracker.sync.notion_sync import reconcile
                 reconcile(session, notion, settings.notion_applications_db_id,
                           only_missing=True)
             log.info("ingest_done", **counts)
+
+    def briefing_job():
+        if notion is None:
+            return
+        with session_scope(engine) as session:
+            counts = enrich_applications(session, llm, notion, datetime.now(UTC))
+            if any(counts.values()):
+                log.info("briefings_done", **counts)
 
     def sweep_job():
         with session_scope(engine) as session:
@@ -112,5 +126,8 @@ def run_forever(engine, settings) -> None:
     scheduler.add_job(guarded("sweep", sweep_job), "interval", minutes=1)
     scheduler.add_job(guarded("digest", digest_job), "interval", minutes=15)
     scheduler.add_job(guarded("notion", notion_job), "interval", minutes=5)
+    # its own job, never inside ingest: research takes minutes and ingest drops
+    # overlapping ticks, so an inline briefing would stall email processing
+    scheduler.add_job(guarded("briefing", briefing_job), "interval", minutes=10)
     log.info("scheduler_started")
     scheduler.start()
