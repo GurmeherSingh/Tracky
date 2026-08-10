@@ -1,11 +1,11 @@
 # Inbox-Driven Obligation Tracker
 
-Turns Gmail into a live ledger of what I owe people — assessments to finish, interviews to
-schedule, offers to answer — and escalates until each one is closed by evidence.
+Turns Gmail into a live ledger of what I owe people — assessments, interview scheduling, offer
+replies — and escalates until each one is closed by evidence.
 
-I missed a real online assessment. I'd read the email; awareness just decayed. The failure mode
-isn't ignorance, it's forgetting — so the central object here isn't an email or a notification but
-an **open obligation** that persists and escalates.
+I missed a real online assessment. I'd read the email; awareness decayed. The failure mode isn't
+ignorance, it's forgetting — so the central object is an **open obligation**, not an email or a
+notification.
 
 ## Architecture
 
@@ -96,84 +96,77 @@ python -m tracker.cli wipe                           # delete ALL data
 | digest check | 15 min | fires the 8am local digest once per day |
 
 Every job survives any exception. Logs are JSON to stdout *and* a rotating `logs/tracker.log` —
-stdout dies with the terminal, and overnight failures need the lines written before the restart.
-A transient failure is retried on the next ingest pass; without that retry the 3-strike counter
-could never advance, since a re-seen email short-circuits as a duplicate. Three strikes *parks*
-the email and Slack says so — nothing downstream would ever mention it again.
+stdout dies with the terminal. A transient failure retries on the next ingest pass; without that,
+the 3-strike counter could never advance, since a re-seen email short-circuits as a duplicate.
+Three strikes *parks* the email and Slack says so, because nothing downstream ever would.
 
 Every classification row is stamped with `prompt_version` and `model`, so comparing prompt
-revisions is a SQL query rather than a guess.
+revisions is a SQL query.
 
 ## How obligations work
 
 - **Created** only from *actionable* email. "We'll be in touch" creates nothing.
-- **No obligation without a due date.** Unstated → 72h default, labeled `[assumed deadline]` in
-  every alert.
+- **No obligation without a due date.** Unstated → 72h default, labeled `[assumed deadline]`.
 - **Tiers:** detection → T-48h → T-12h → last-call, where last-call is `due − effort − 1h`
   (assessment 2h, take-home 4h, scheduling reply 5min, offer 1h, interview 30min). Alerts landing
   01:00–07:00 local move *earlier*, never later.
-- **A confirmed interview is its own obligation.** No reply is owed once a slot is booked, but it's
-  still a place you have to be. Effort 30min puts last-call 90min before the call. Never created
-  from an assumed time — a meeting time was stated or it wasn't.
-- **Closed four ways:** receipt email, next-stage email (an interview invite closes the
-  assessment), rejection (→ `moot`), or the deadline passing — which marks
-  `unconfirmed_possibly_missed`, not "missed", because the system separates what it knows from what
-  it suspects. An elapsed interview closes as `elapsed`: over, not overdue. ✅ closes manually.
-- **Alerts are actionable** — Done / Remind me / Junk plus an email deep link. "Remind me" sets an
-  off-ladder `reminder` tier, so escalation resumes afterward instead of being consumed.
-  Escalations thread under the first alert and broadcast; plain replies would get *quieter* as the
-  deadline approached.
-- **The board is what you can still act on.** Passed deadlines move to the digest. It's one pinned
-  message edited in place, and it re-adopts itself from channel history if the pointer is lost.
-- **Gone quiet ≠ owed.** A human replied but nothing in 14 days → listed on the board, never an
-  obligation. Waiting on someone else isn't work you owe.
+- **A confirmed interview is its own obligation** — no reply is owed, but it's still a place you
+  have to be. Effort 30min puts last-call 90min before the call. Never from an assumed time.
+- **Closed four ways:** receipt email, next-stage email, rejection (→ `moot`), or the deadline
+  passing → `unconfirmed_possibly_missed`, not "missed": the system separates what it knows from
+  what it suspects. An elapsed interview closes as `elapsed` — over, not overdue. ✅ closes
+  manually.
+- **Alerts are actionable** — Done / Remind me / Junk plus an email deep link. "Remind me" is an
+  off-ladder tier, so escalation resumes afterward instead of being consumed. Escalations thread
+  under the first alert *and broadcast*; plain replies would get quieter as the deadline neared.
+- **The board is what you can still act on** — passed deadlines move to the digest. One pinned
+  message edited in place; it re-adopts itself from channel history if the pointer is lost.
+- **Gone quiet ≠ owed.** Human replied, then nothing for 14 days → listed, never an obligation.
 
 ## Interview briefings
 
 An `interview_invite` event appends a sourced briefing to the company's Notion page: what they do,
 stated values, dated recent news, the published interview process, questions to ask, sources.
 
-- **Server-side `web_search`, not a search API.** The deciding factor is citations — every claim on
-  the page carries a clickable link. An external search key plus fetch-and-parse is three more
-  moving parts for the same output; model memory alone fabricates.
-- **Markdown out, not structured JSON.** The two are incompatible in the API, and sources win —
-  hence a small tested markdown→blocks converter. Its subset (`##`/`###`, `- `, `[label](url)`) and
-  the prompt's formatting rules are one contract.
-- **Own job, gated on `briefed_at IS NULL`.** Research fans out over a thread pool; every DB read
-  and write stays on the calling thread, because a SQLAlchemy `Session` isn't thread-safe and only
-  plain tuples cross the boundary.
+- **Server-side `web_search`, not a search API** — the deciding factor is citations: every claim
+  carries a clickable link. An external key plus fetch-and-parse is three more moving parts for the
+  same output, and model memory alone fabricates.
+- **Markdown out, not structured JSON** — the two are incompatible in the API, and sources win.
+  Hence a tested markdown→blocks converter whose subset (`##`/`###`, `- `, `[label](url)`) and the
+  prompt's formatting rules are one contract.
+- **Own job, gated on `briefed_at IS NULL`** — research fans out over a thread pool; all DB work
+  stays on the calling thread, since a SQLAlchemy `Session` isn't thread-safe. Only tuples cross.
 
-Observed rather than aspirational: on a live run the model wrote **"Nothing found"** under
-*Interview process* for one company instead of guessing at a loop.
+Observed, not aspirational: on a live run the model wrote **"Nothing found"** under *Interview
+process* rather than guessing at a loop.
 
 ## Asking it things
 
-`@Tracky` in a channel or DM the bot — *"what's due this week?"*, *"where am I with Stripe?"*,
-*"remind me about the take-home at 6"*, *"brief me on Stripe"*. It answers strictly from tool
-results (three read tools plus `set_reminder` and `brief_company`) and receives pre-formed
-`<url|label>` links so it pastes a token rather than building link syntax.
+`@Tracky` or a DM — *"what's due this week?"*, *"where am I with Stripe?"*, *"remind me about the
+take-home at 6"*, *"brief me on Stripe"*. Answers come strictly from tool results (three read tools
+plus `set_reminder` and `brief_company`), with links arriving pre-formed as `<url|label>` so the
+model pastes a token instead of building syntax.
 
-If the model is unreachable it retries once and then *says so* — silence reads as a broken bot.
-`brief_company` refuses an already-briefed page: that retry wraps the whole conversation, so
-without the guard a second pass would append the briefing twice.
+Unreachable model → one retry, then it *says so*; silence reads as a broken bot. And
+`brief_company` refuses an already-briefed page, because that retry wraps the whole conversation
+and would otherwise append the briefing twice.
 
 ## Known limitations
 
 - Google OAuth Testing mode expires refresh tokens weekly. Self-alarmed on any 401; re-auth is one
   command.
 - Gmail's `historyId` expires after ~a week of downtime and returns **404, not an empty list** →
-  date-ranged resync with a deliberate 1-day overlap (idempotency makes the re-fetch free).
-- Receipt closure is phrase-matching; a miss just leaves the obligation open until next-stage or
-  deadline closes it.
+  date-ranged resync with a 1-day overlap (idempotency makes the re-fetch free).
+- Receipt closure is phrase-matching; a miss leaves the obligation open until next-stage or deadline
+  closes it.
 - Company matching joins on the lowercased name, so "Stripe" vs "Stripe, Inc." splits rather than
-  merges — safe, but a split. A normalization table was dropped: validation over real mail produced
-  no duplicates.
+  merges — safe, but a split. A normalization table was dropped: validation found no duplicates.
 - The Notion reconciler rewrites every row each cycle instead of diffing, so write volume scales
   with ledger size rather than change. Fine here, wrong at 10×.
 - A briefing over 100 blocks appends in chunks; a mid-chunk failure duplicates content on retry.
-  Real briefings run 40–70 blocks, so this is a gap rather than a handled case.
-- `brief_company` holds its DB session open for the whole two-minute research call — fine for one
-  user, wrong shape for concurrent ones.
+  Real ones run 40–70 blocks, so this is a gap rather than a handled case.
+- `brief_company` holds its DB session open for the whole research call — fine for one user, wrong
+  shape for concurrent ones.
 
 ## Roadmap
 
