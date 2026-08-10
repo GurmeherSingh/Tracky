@@ -1,11 +1,10 @@
 # Inbox-Driven Obligation Tracker
 
 Turns Gmail into a live ledger of what I owe people — assessments, interview scheduling, offer
-replies — and escalates until each one is closed by evidence.
+replies — and escalates each one until it's closed by evidence.
 
-I missed a real online assessment. I'd read the email; awareness decayed. The failure mode isn't
-ignorance, it's forgetting — so the central object is an **open obligation**, not an email or a
-notification.
+Built after I missed a real online assessment I had already read. The central object is an **open
+obligation** that persists, escalates as its deadline approaches, and closes on evidence.
 
 ## Architecture
 
@@ -13,7 +12,7 @@ notification.
 Gmail (readonly) → ingest (poll 2min, historyId cursor, date-ranged fallback)
                  → gates (0: server-side query · 1: sender tables · 2: bulk headers)
                  → classify (PURE: structured output, claude-sonnet-5 → opus-5 cascade)
-                 → resolve (ambiguity → human review, never auto-merge)
+                 → resolve (application matching; ambiguity → human review)
                  → state (append-only event log → derived status)
                  → obligations (create / close 4 ways / schedule alerts)
         Postgres (single source of truth)
@@ -23,26 +22,24 @@ Gmail (readonly) → ingest (poll 2min, historyId cursor, date-ranged fallback)
                  → assistant (Tracky answers questions from these rows)           [read-only]
 ```
 
-## Design rules
+## How it's built
 
-- **Postgres is truth; Slack and Notion are one-directional projections.** Notion downtime can
-  never suppress an alert.
-- **Pending work is a nullable column, not a queue** — `next_alert_at`, `briefed_at`. Null means
-  still owed, so the retry path is *the absence of code*: the next tick sees the null again.
-  Downtime degrades to latency, never loss.
+- **Postgres holds the truth.** Slack and Notion are one-directional projections; a projection
+  failure never suppresses an alert.
+- **Pending work lives in a nullable column** — `next_alert_at` for alerts, `briefed_at` for
+  briefings. A null means still owed, so the next tick picks it up. Downtime becomes latency.
 - **`tracker/classify/` is pure** — no DB, no network beyond the injected client, no clock. A test
-  AST-parses the package for forbidden imports.
-- **Inverted confidence thresholds.** "Is this my application?" favors precision (unsure → review
-  queue, never silently written). "Is this an obligation?" favors recall (unsure → create it,
-  labeled `unconfirmed`). A wrong row pollutes forever; a missed obligation is the incident that
-  started this.
-- **Two Slack channels as a structural guarantee.** `#job-alerts` (notifications on, deadline
-  tiers only) and `#job-tracker` (muted: board, digest, review). The notifier class has no generic
-  send method, so alerts *cannot* go anywhere else.
-- **Idempotent everywhere.** Gmail's message id is the primary key; every re-run and overlap
-  re-fetch is safe by construction.
-- **No claim without a source.** Briefings must write "Nothing found" rather than assert anything
-  the model couldn't retrieve.
+  AST-parses the package for forbidden imports, which keeps classification replayable over stored
+  email bodies.
+- **Confidence thresholds run in opposite directions.** "Is this my application?" sends anything
+  unsure to a Slack review queue. "Is this an obligation?" creates it anyway, labeled
+  `unconfirmed`, and alerts.
+- **Two Slack channels enforce alert hygiene.** `#job-alerts` (notifications on) carries only
+  deadline tiers; `#job-tracker` (muted) carries board, digest, and review queue. The notifier
+  class exposes no generic send method.
+- **Gmail's message id is the primary key**, so every re-run and every overlap re-fetch is safe.
+- **Briefings cite everything.** The prompt requires "Nothing found" for anything the model
+  couldn't retrieve.
 
 ## Setup
 
@@ -57,24 +54,24 @@ copy .env.example .env                     # then fill in every value
 
 **1. Google OAuth (Gmail read-only).** Cloud Console → enable the Gmail API → OAuth consent screen
 (External, Testing) → OAuth client of type **Desktop app** → save as `credentials.json` in the repo
-root. First run opens a consent screen and writes `token.json`. Scope is exactly `gmail.readonly` —
-the token physically cannot send, delete, or label mail.
+root. First run opens a consent screen and writes `token.json`. The scope is exactly
+`gmail.readonly`.
 
 **2. Slack app.** Enable **Socket Mode** (gives the `xapp-` token; no public endpoint) and
 **Interactivity** (alert buttons, reminder modal).
 Scopes: `chat:write`, `pins:write`, `reactions:read`, `app_mentions:read`, `im:history`, `im:read`,
 `im:write`. Events: `reaction_added`, `app_mention`, `message.im`.
-Create `#job-alerts` (notifications on) and `#job-tracker` (muted), invite the bot to both, put
+Create `#job-alerts` (notifications on) and `#job-tracker` (muted), invite the bot to both, and put
 both channel ids in `.env`.
 
-**3. Anthropic API key** — one key covers classification (`claude-sonnet-5`, cascading to
+**3. Anthropic API key.** One key covers classification (`claude-sonnet-5`, cascading to
 `claude-opus-5` on low confidence), Tracky (`claude-sonnet-5`), and briefings (`claude-opus-5` with
-the server-side `web_search` tool — no separate search key or dependency).
+the server-side `web_search` tool).
 
-**4. Notion (optional)** — internal integration, share a database, set its id. Properties needed:
+**4. Notion (optional).** Internal integration, share a database, set its id. Properties needed:
 `Name` (title), `Status` (select), `Company` (rich text), `Role` (rich text), `Source` (select),
-`Last contact` (date), `Open obligations` (number). Briefings need no extra property — they append
-page *content*, a different API surface. Unset → Notion sync and briefings don't run.
+`Last contact` (date), `Open obligations` (number). Leave the config unset and Notion sync and
+briefings stay off.
 
 ## Running
 
@@ -87,89 +84,85 @@ python -m tracker.cli wipe                           # delete ALL data
 
 `run` starts five guarded jobs plus the Socket Mode listener (buttons, reactions, Tracky):
 
-| job | every | why that interval |
+| job | every | what it does |
 |---|---|---|
-| ingest + retry pass | 2 min | APScheduler *drops* overlapping runs, and a catch-up pass can outlast a 1-min tick |
-| escalation sweep | 1 min | a user-set reminder should land near its chosen minute; the query is indexed |
-| briefings | 10 min | research takes minutes; inside ingest it would stall email processing |
-| Notion reconcile | 5 min | cheap self-repair of any missed projection write |
-| digest check | 15 min | fires the 8am local digest once per day |
-
-Every job survives any exception. Logs are JSON to stdout *and* a rotating `logs/tracker.log` —
-stdout dies with the terminal. A transient failure retries on the next ingest pass; without that,
-the 3-strike counter could never advance, since a re-seen email short-circuits as a duplicate.
-Three strikes *parks* the email and Slack says so, because nothing downstream ever would.
+| ingest + retry pass | 2 min | new mail → ledger; new applications get their Notion page |
+| escalation sweep | 1 min | fires every alert whose `next_alert_at` has arrived |
+| briefings | 10 min | researches companies with a pending interview |
+| Notion reconcile | 5 min | re-projects every application's properties |
+| digest check | 15 min | sends the 8am local digest once a day |
 
 Every classification row is stamped with `prompt_version` and `model`, so comparing prompt
 revisions is a SQL query.
 
+## Failure handling
+
+- Every job runs inside a guard, so the scheduler survives any exception.
+- Logs are structured JSON to stdout and a rotating `logs/tracker.log` (2 MB × 3).
+- A classification that fails transiently is re-attempted on the next ingest pass. Three failures
+  park the email and post a Slack alarm pointing at the `failed_jobs` table.
+- Gmail's `historyId` expires after about a week of downtime and returns 404. The pipeline falls
+  back to a date-ranged resync with a 1-day overlap; idempotency makes the re-fetch free.
+- Google's Testing-mode refresh token dies weekly. Any 401 posts a loud alarm to `#job-alerts`,
+  with a 6-hour cooldown so it can't spam.
+- Slack and Notion errors are caught per item, so one bad projection write can't roll back an
+  ingest pass.
+- Tracky retries once on an API error and then replies that it couldn't reach the model.
+
 ## How obligations work
 
 - **Created** only from *actionable* email. "We'll be in touch" creates nothing.
-- **No obligation without a due date.** Unstated → 72h default, labeled `[assumed deadline]`.
+- **Every obligation has a due date.** An unstated deadline becomes a 72h default, labeled
+  `[assumed deadline]` in every alert.
 - **Tiers:** detection → T-48h → T-12h → last-call, where last-call is `due − effort − 1h`
   (assessment 2h, take-home 4h, scheduling reply 5min, offer 1h, interview 30min). Alerts landing
-  01:00–07:00 local move *earlier*, never later.
-- **A confirmed interview is its own obligation** — no reply is owed, but it's still a place you
-  have to be. Effort 30min puts last-call 90min before the call. Never from an assumed time.
+  01:00–07:00 local move earlier.
+- **A confirmed interview becomes its own obligation** with the meeting time as its deadline. Effort
+  30min puts last-call 90min before the call. A stated time is required.
 - **Closed four ways:** receipt email, next-stage email, rejection (→ `moot`), or the deadline
-  passing → `unconfirmed_possibly_missed`, not "missed": the system separates what it knows from
-  what it suspects. An elapsed interview closes as `elapsed` — over, not overdue. ✅ closes
-  manually.
-- **Alerts are actionable** — Done / Remind me / Junk plus an email deep link. "Remind me" is an
-  off-ladder tier, so escalation resumes afterward instead of being consumed. Escalations thread
-  under the first alert *and broadcast*; plain replies would get quieter as the deadline neared.
-- **The board is what you can still act on** — passed deadlines move to the digest. One pinned
-  message edited in place; it re-adopts itself from channel history if the pointer is lost.
-- **Gone quiet ≠ owed.** Human replied, then nothing for 14 days → listed, never an obligation.
+  passing (→ `unconfirmed_possibly_missed`). An elapsed interview closes as `elapsed`. A ✅ reaction
+  closes manually.
+- **Alerts carry Done / Remind me / Junk buttons** and an email deep link. "Remind me" opens a time
+  picker and sets an off-ladder `reminder` tier, so escalation resumes afterward. Escalations thread
+  under the first alert and broadcast to the channel.
+- **The board shows what's still actionable.** Passed deadlines move to the digest. It's one pinned
+  message edited in place, and it re-adopts itself from channel history if the pointer is lost.
+- **Gone quiet:** a human replied, then nothing for 14 days → listed on the board without becoming
+  an obligation.
 
 ## Interview briefings
 
 An `interview_invite` event appends a sourced briefing to the company's Notion page: what they do,
-stated values, dated recent news, the published interview process, questions to ask, sources.
+what they say they value, recent news with dates, the published interview process, questions worth
+asking, and a source list.
 
-- **Server-side `web_search`, not a search API** — the deciding factor is citations: every claim
-  carries a clickable link. An external key plus fetch-and-parse is three more moving parts for the
-  same output, and model memory alone fabricates.
-- **Markdown out, not structured JSON** — the two are incompatible in the API, and sources win.
-  Hence a tested markdown→blocks converter whose subset (`##`/`###`, `- `, `[label](url)`) and the
-  prompt's formatting rules are one contract.
-- **Own job, gated on `briefed_at IS NULL`** — research fans out over a thread pool; all DB work
-  stays on the calling thread, since a SQLAlchemy `Session` isn't thread-safe. Only tuples cross.
+Research runs on `claude-opus-5` with Anthropic's server-side `web_search` tool, so citations come
+back attached to the text and every claim on the page carries a clickable link. The model emits
+markdown in a fixed section layout, which a tested converter turns into Notion blocks (`##`/`###`
+headings, `- ` bullets, `[label](url)` links), appended 100 blocks at a time.
 
-Observed, not aspirational: on a live run the model wrote **"Nothing found"** under *Interview
-process* rather than guessing at a loop.
+The job runs every 10 minutes over applications where `briefed_at IS NULL`, fanning out across a
+thread pool for concurrent interviews. Every database read and write happens on the calling thread
+and only plain tuples cross into workers, because a SQLAlchemy `Session` is not thread-safe.
+`briefed_at` is stamped on success, so a failed run is simply picked up again.
+
+On a live run the model wrote **"Nothing found"** under *Interview process* for a company whose
+loop it couldn't source, and marked two funding items as headline-only.
 
 ## Asking it things
 
-`@Tracky` or a DM — *"what's due this week?"*, *"where am I with Stripe?"*, *"remind me about the
-take-home at 6"*, *"brief me on Stripe"*. Answers come strictly from tool results (three read tools
-plus `set_reminder` and `brief_company`), with links arriving pre-formed as `<url|label>` so the
-model pastes a token instead of building syntax.
-
-Unreachable model → one retry, then it *says so*; silence reads as a broken bot. And
-`brief_company` refuses an already-briefed page, because that retry wraps the whole conversation
-and would otherwise append the briefing twice.
+`@Tracky` in a channel or a DM — *"what's due this week?"*, *"where am I with Stripe?"*, *"remind me
+about the take-home at 6"*, *"brief me on Stripe"*. It answers from three read tools over the ledger
+plus `set_reminder` and `brief_company`, and receives links pre-formed as `<url|label>` so it pastes
+them verbatim. `brief_company` reports back when a page has already been briefed.
 
 ## Known limitations
 
-- Google OAuth Testing mode expires refresh tokens weekly. Self-alarmed on any 401; re-auth is one
-  command.
-- Gmail's `historyId` expires after ~a week of downtime and returns **404, not an empty list** →
-  date-ranged resync with a 1-day overlap (idempotency makes the re-fetch free).
-- Receipt closure is phrase-matching; a miss leaves the obligation open until next-stage or deadline
-  closes it.
-- Company matching joins on the lowercased name, so "Stripe" vs "Stripe, Inc." splits rather than
-  merges — safe, but a split. A normalization table was dropped: validation found no duplicates.
-- The Notion reconciler rewrites every row each cycle instead of diffing, so write volume scales
-  with ledger size rather than change. Fine here, wrong at 10×.
-- A briefing over 100 blocks appends in chunks; a mid-chunk failure duplicates content on retry.
-  Real ones run 40–70 blocks, so this is a gap rather than a handled case.
-- `brief_company` holds its DB session open for the whole research call — fine for one user, wrong
-  shape for concurrent ones.
-
-## Roadmap
-
-Calendar entries for deadlines · follow-up nudges drafted for approval · diff-before-write in the
-Notion reconciler · re-briefing when a page goes stale · Gmail push via Pub/Sub (the poll is an
-interface push can drop into).
+- Receipt-based closure is phrase-matching, so a missed receipt leaves the obligation open until
+  next-stage or the deadline closes it.
+- Company matching joins on the lowercased name, so "Stripe" and "Stripe, Inc." would split into two
+  rows rather than merge.
+- The Notion reconciler rewrites every row each cycle, so write volume scales with ledger size
+  rather than with change.
+- A briefing over 100 blocks appends in chunks; a failure between chunks would duplicate content on
+  the retry. Real briefings run 40–70 blocks.
