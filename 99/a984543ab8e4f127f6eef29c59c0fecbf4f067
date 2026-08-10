@@ -1,0 +1,23 @@
+tracker/research/briefing.py
+  s_0f86d25a77c49c::t_50e17a44843e3d 121
+  s_0f86d25a77c49c::t_efb688bf9f515c 34-35
+  s_0f86d25a77c49c::t_bc6897c2d3d719 83-100
+tests/test_briefing.py
+  s_0f86d25a77c49c::t_0bad15469a2fb7 95-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "99a984543ab8e4f127f6eef29c59c0fecbf4f067",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
