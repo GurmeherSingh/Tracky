@@ -35,6 +35,17 @@ def test_board_links_company_to_notion(session):
     assert "<https://www.notion.so/245248|HRT>" in text
 
 
+def test_board_omits_passed_deadlines_digest_keeps_them(session):
+    _, ob = seed(session)
+    ob.status = "unconfirmed_possibly_missed"
+    session.flush()
+    web = FakeWebClient()
+    notifier = SlackNotifier(web, "C-A", "C-T")
+    update_board(session, notifier, NOW, TZ)
+    assert "No open obligations" in web.posts[0]["text"]
+    assert "HRT" in build_digest_data(session, NOW, TZ).unconfirmed[0]
+
+
 def test_update_board_adopts_existing_pinned_board(session):
     seed(session)
     web = FakeWebClient()

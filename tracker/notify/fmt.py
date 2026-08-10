@@ -83,12 +83,11 @@ def render_board(open_obs: list[tuple[Obligation, str, str | None]],
         lines.append("✅ No open obligations. Nothing is owed.")
     else:
         for ob, company, page_id in sorted(open_obs, key=lambda p: p[0].due_at):
-            flag = " ⚠️ possibly missed" if ob.status == "unconfirmed_possibly_missed" else ""
             assumed = " [assumed]" if ob.due_confidence == "assumed" else ""
             lines.append(f"• {ob.title.split(' — ')[0]} — "
                          f"{_company_cell(company, page_id)} — "
                          f"due {_fmt_local(ob.due_at, tz)} "
-                         f"({_countdown(ob.due_at, now)}){assumed}{flag}")
+                         f"({_countdown(ob.due_at, now)}){assumed}")
     if quiet:
         lines += ["", "*🔇 Gone quiet (>14d after human contact)*"]
         lines += [f"• {_company_cell(a.company_display, a.notion_page_id)} — "

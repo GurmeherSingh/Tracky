@@ -14,8 +14,9 @@ def _open_obs_with_company(session) -> list[tuple[Obligation, str, str | None]]:
     rows = (session.query(Obligation, Application.company_display,
                           Application.notion_page_id)
             .join(Application, Obligation.application_id == Application.id)
-            .filter(Obligation.status.in_(["open", "unconfirmed",
-                                           "unconfirmed_possibly_missed"]))
+            # the board is what you can still act on; a passed deadline is
+            # bookkeeping and belongs to the daily digest instead
+            .filter(Obligation.status.in_(["open", "unconfirmed"]))
             .all())
     return [(ob, company, page_id) for ob, company, page_id in rows]
 
