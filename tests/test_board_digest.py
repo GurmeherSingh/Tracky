@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from tracker.models import Application, Obligation, get_state
-from tracker.notify.board import update_board
+from tracker.notify.board import _is_board, update_board
 from tracker.notify.digest import build_digest_data, send_digest_if_due
 from tracker.notify.fmt import DigestData, render_board, render_digest
 from tracker.notify.slack import SlackNotifier
@@ -27,6 +27,14 @@ def seed(session):
 
 def test_render_board_empty_state():
     assert "No open obligations" in render_board([], [], NOW, TZ)
+
+
+def test_rendered_board_is_recognised_as_a_board():
+    """The renderer's header and the adoption matcher are one contract: if the
+    header text drifts, adoption silently stops finding boards."""
+    assert _is_board({"bot_id": "B1", "text": render_board([], [], NOW, TZ)})
+    assert not _is_board({"bot_id": "B1", "text": "*📋 Daily Digest*\nstuff"})
+    assert not _is_board({"text": "*📋 Obligation Board*"})  # a human, not the bot
 
 
 def test_board_links_company_to_notion(session):
@@ -59,6 +67,25 @@ def test_update_board_adopts_existing_pinned_board(session):
     notifier = SlackNotifier(web, "C-A", "C-T")
     update_board(session, notifier, NOW, TZ)  # no board_ts stored (post-wipe)
     assert web.posts == []                    # adopted, never re-posted
+    assert web.updates[0]["ts"] == "9.2"
+    assert {"channel": "C-T", "timestamp": "9.1"} in web.unpins
+    assert get_state(session, "board_ts") == "9.2"
+
+
+def test_update_board_adopts_board_slack_spells_with_shortcode(session):
+    """Slack stores the header's emoji as `:clipboard:`, so a board read back
+    from history never matches the literal text it was posted with."""
+    seed(session)
+    web = FakeWebClient()
+    web.history = [
+        {"ts": "9.2", "bot_id": "B1", "text": "*:clipboard: Obligation Board*\nnew",
+         "pinned_to": ["C-T"]},
+        {"ts": "9.1", "bot_id": "B1", "text": "*:clipboard: Obligation Board*\nold",
+         "pinned_to": ["C-T"]},
+    ]
+    notifier = SlackNotifier(web, "C-A", "C-T")
+    update_board(session, notifier, NOW, TZ)
+    assert web.posts == []
     assert web.updates[0]["ts"] == "9.2"
     assert {"channel": "C-T", "timestamp": "9.1"} in web.unpins
     assert get_state(session, "board_ts") == "9.2"

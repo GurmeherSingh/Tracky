@@ -7,7 +7,7 @@ from tracker.notify.fmt import render_board
 from tracker.notify.slack import SlackNotifier
 from tracker.state.quiet import gone_quiet_applications
 
-BOARD_PREFIX = "*📋 Obligation Board*"
+BOARD_MARKER = "Obligation Board*"
 
 
 def _open_obs_with_company(session) -> list[tuple[Obligation, str, str | None]]:
@@ -21,14 +21,21 @@ def _open_obs_with_company(session) -> list[tuple[Obligation, str, str | None]]:
     return [(ob, company, page_id) for ob, company, page_id in rows]
 
 
+def _is_board(message: dict) -> bool:
+    """Slack stores the header's emoji as `:clipboard:`, so a board read back
+    from history is never byte-identical to the text it was posted with. Match
+    the run of header Slack does not rewrite."""
+    first_line = (message.get("text") or "").split("\n", 1)[0]
+    return bool(message.get("bot_id")) and first_line.endswith(BOARD_MARKER)
+
+
 def _adopt_or_post(session, notifier: SlackNotifier, text: str) -> None:
     """The board pointer can be lost (wipe, restored backup). Rather than
     littering the channel with a new pinned board, adopt the bot's most recent
     board message from channel history and unpin any older strays."""
     resp = notifier.web.conversations_history(channel=notifier.tracker_channel,
                                               limit=50)
-    boards = [m for m in resp.get("messages", [])
-              if m.get("bot_id") and m.get("text", "").startswith(BOARD_PREFIX)]
+    boards = [m for m in resp.get("messages", []) if _is_board(m)]
     if boards:
         newest, strays = boards[0], boards[1:]  # history is newest-first
         notifier.update_message(notifier.tracker_channel, newest["ts"], text)
