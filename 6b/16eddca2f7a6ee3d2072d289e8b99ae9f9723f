@@ -1,0 +1,23 @@
+README.md
+  s_0f86d25a77c49c::t_53318d38f7ef55 3-4,6-8
+  s_0f86d25a77c49c::t_b3890a5bb32d0c 99-101,104
+  s_0f86d25a77c49c::t_2a81cb1951a31f 109,113-124
+  s_0f86d25a77c49c::t_1468be94cc6aa9 131-138,140-141,145-148,150-152
+  s_0f86d25a77c49c::t_ab6052e01e725e 159-161,163,167-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6b16eddca2f7a6ee3d2072d289e8b99ae9f9723f",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
