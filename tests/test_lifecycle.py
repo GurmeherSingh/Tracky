@@ -46,6 +46,38 @@ def test_actionable_assessment_creates_open_obligation(session):
     assert ob.due_confidence == "stated"
 
 
+def test_confirmed_interview_becomes_an_appointment(session):
+    app = make_app(session)
+    at = NOW + timedelta(days=5)
+    ob = create_obligation_if_needed(
+        session, app.id,
+        make_cls("interview_invite", actionable=False, deadline=at,
+                 is_confirmation=True),
+        make_email(), TZ)
+    assert ob.type == "interview" and ob.due_at == at
+    assert ob.title == "Interview — Stripe"
+
+
+def test_confirmation_without_a_time_invents_nothing(session):
+    app = make_app(session)
+    assert create_obligation_if_needed(
+        session, app.id,
+        make_cls("interview_invite", actionable=False, is_confirmation=True),
+        make_email(), TZ) is None
+
+
+def test_elapsed_interview_closes_quietly(session):
+    app = make_app(session)
+    ob = create_obligation_if_needed(
+        session, app.id,
+        make_cls("interview_invite", actionable=False,
+                 deadline=NOW - timedelta(hours=1), is_confirmation=True),
+        make_email(), TZ)
+    missed = mark_deadline_passed(session, NOW)
+    assert ob.closed_by == "elapsed" and ob.status == "completed"
+    assert ob not in missed  # no "possibly missed" alert for a meeting that happened
+
+
 def test_announced_not_actionable_creates_nothing(session):
     app = make_app(session)
     assert create_obligation_if_needed(
@@ -188,9 +220,11 @@ def test_confirmed_interview_closes_scheduling_reply(session):
     assert closed[0].status == "completed" and closed[0].closed_by == "next_stage"
 
 
-def test_confirmed_interview_creates_no_obligation():
+def test_confirmed_interview_is_an_appointment_never_a_reply():
     assert obligation_type_for(
-        make_cls("interview_invite", is_confirmation=True)) is None
+        make_cls("interview_invite", is_confirmation=True)) == "interview"
+    assert obligation_type_for(
+        make_cls("interview_invite")) == "scheduling_reply"
 
 
 def test_self_sent_reply_closes_scheduling_reply(session):

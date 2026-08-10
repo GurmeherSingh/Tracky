@@ -11,19 +11,21 @@ _COMPLETION_PHRASES = ("submitted", "completed", "received your solution",
                        "thank you for completing", "successfully finished")
 _TITLES = {"assessment": "Assessment", "take_home": "Take-home",
            "scheduling_reply": "Reply to schedule interview",
-           "offer_response": "Respond to offer"}
+           "offer_response": "Respond to offer", "interview": "Interview"}
 
 
 def obligation_type_for(cls: EmailClassification,
                         subject_and_body: str = "") -> str | None:
+    # a booked slot isn't a reply you owe — it's a place you have to be, which
+    # is why it counts despite the classifier calling it non-actionable
+    if cls.category == "interview_invite" and cls.is_confirmation:
+        return "interview"
     if not cls.actionable:
         return None
     if cls.category == "assessment":
         return "take_home" if "take-home" in subject_and_body.lower() else "assessment"
     if cls.category == "interview_invite":
-        # a booked slot is a state, not an ask — it must not (re)create the
-        # scheduling obligation it just satisfied
-        return None if cls.is_confirmation else "scheduling_reply"
+        return "scheduling_reply"
     if cls.category == "offer":
         return "offer_response"
     return None
@@ -37,6 +39,8 @@ def create_obligation_if_needed(session, application_id: int,
         return None
     due_at, due_confidence = finalize_deadline(
         cls.deadline_utc, cls.deadline_basis, email.received_at, cls.category)
+    if ob_type == "interview" and due_confidence == "assumed":
+        return None  # a meeting time is never guessed — it was stated or it wasn't
     # reminder emails must not duplicate an open obligation of the same type;
     # a better-grounded deadline (stated > relative > assumed) replaces a weaker one
     existing = session.query(Obligation).filter(
@@ -121,12 +125,17 @@ def apply_closures(session, application_id: int, cls: EmailClassification,
 
 
 def mark_deadline_passed(session, now: datetime) -> list[Obligation]:
-    missed = session.query(Obligation).filter(
-        Obligation.status.in_(["open", "unconfirmed"]),
-        Obligation.due_at < now).all()
-    for ob in missed:
+    missed: list[Obligation] = []
+    for ob in session.query(Obligation).filter(
+            Obligation.status.in_(["open", "unconfirmed"]),
+            Obligation.due_at < now).all():
+        if ob.type == "interview":
+            # a meeting whose time has passed is over, not overdue
+            close_obligation(ob, "completed", "elapsed", now)
+            continue
         ob.status = "unconfirmed_possibly_missed"
         ob.closed_by = "deadline"
         ob.closed_at = now
         ob.next_alert_at = None
+        missed.append(ob)
     return missed

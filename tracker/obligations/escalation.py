@@ -2,7 +2,10 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 EFFORT_MINUTES = {"assessment": 120, "take_home": 240,
-                  "scheduling_reply": 5, "offer_response": 60}
+                  "scheduling_reply": 5, "offer_response": 60,
+                  # an interview needs settling-in time, not doing time — 30
+                  # puts last_call 90 minutes before the call starts
+                  "interview": 30}
 BUFFER_MINUTES = 60
 TIERS = ["detection", "t48", "t12", "last_call"]
 
