@@ -1,0 +1,24 @@
+tests/test_notion_sync.py
+  s_0f86d25a77c49c::t_41b6b76e4e00b4 61-72
+tracker/sync/notion_sync.py
+  s_0f86d25a77c49c::t_3698ca67ef89de 22-23,26-29
+tracker/jobs.py
+  s_0f86d25a77c49c::t_4ebf838badc155 66-67
+  s_0f86d25a77c49c::t_13b765bb128749 65,68-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d23b6004bb37d292e30dc95c5ae9dca0c8d1aa7c",
+  "prompts": {},
+  "sessions": {
+    "s_0f86d25a77c49c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38b46481-c4bb-4422-b8f1-86ace851199b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Gurmeher Singh <gurumehersingh1706@gmail.com>"
+    }
+  }
+}
