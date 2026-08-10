@@ -92,6 +92,32 @@ def test_pause_turn_is_resumed_and_both_halves_are_kept():
     assert resumed["content"] is first.content
 
 
+def test_text_split_around_a_search_is_joined_on_a_new_line():
+    """Prose arrives in separate text blocks either side of each search.
+    Concatenating them welds the tail of one onto the head of the next, which
+    silently turns "## What they do" into body text."""
+    client = FakeClient([Msg([
+        Text("Let me look that up."),
+        SearchResult([{"title": "x", "url": "https://x.com"}]),
+        Text("## What they do\n- payments"),
+    ])])
+
+    md = build_briefing(client, "Stripe")
+
+    assert "## What they do" in md.splitlines()
+
+
+def test_a_preamble_before_the_first_heading_is_dropped():
+    client = FakeClient([Msg([Text("Sure, researching now.\n\n## What they do\n"
+                                   "- payments")])])
+    assert build_briefing(client, "Stripe").startswith("## What they do")
+
+
+def test_prose_with_no_headings_at_all_is_still_returned():
+    client = FakeClient([Msg([Text("Nothing found for this company.")])])
+    assert build_briefing(client, "Stripe") == "Nothing found for this company."
+
+
 def test_a_search_error_raises_rather_than_returning_unsourced_prose():
     client = FakeClient([Msg([
         SearchResult(SearchError("max_uses_exceeded")),

@@ -31,7 +31,8 @@ understands exactly this much:
 Anything else (bold, tables, code fences, numbered lists, nested bullets) is \
 rendered literally and looks broken. Do not use it.
 
-Emit these sections in this order, nothing before or after:
+Write no preamble and no sign-off. The first characters of your answer are \
+"## What they do". Emit these sections in this order, nothing before or after:
 
 ## What they do
 ## What they say they value
@@ -79,8 +80,24 @@ def _search_error(message) -> str | None:
 
 
 def _text_of(message) -> str:
-    return "".join(b.text for b in message.content
-                   if getattr(b, "type", None) == "text")
+    # newline, not "": the model's prose is split into a separate text block
+    # either side of every search, and concatenating welds the tail of one onto
+    # the head of the next — enough to turn a heading into body text
+    return "\n".join(b.text.strip() for b in message.content
+                     if getattr(b, "type", None) == "text" and b.text.strip())
+
+
+def _from_first_heading(markdown: str) -> str:
+    """Drop any conversational preamble ahead of the first section.
+
+    Deterministic rather than trusting the prompt: the page must open on a
+    heading, and "Sure, researching now." would otherwise be its first line.
+    """
+    lines = markdown.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            return "\n".join(lines[i:])
+    return markdown
 
 
 def build_briefing(client, company: str, role: str = "") -> str:
@@ -101,7 +118,7 @@ def build_briefing(client, company: str, role: str = "") -> str:
             markdown = "\n".join(c for c in chunks if c.strip()).strip()
             if not markdown:
                 raise BriefingFailed("model returned an empty briefing")
-            return markdown
+            return _from_first_heading(markdown)
         # the server hit its search-iteration cap mid-answer; handing the
         # partial turn back is what lets it carry on
         messages.append({"role": "assistant", "content": message.content})
